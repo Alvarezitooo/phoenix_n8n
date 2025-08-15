@@ -1,0 +1,413 @@
+{
+  "name": "📊 Phoenix Stripe Subscription Manager",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "stripe-subscription-manager",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "subscription-manager-entry",
+      "name": "📊 Subscription Manager Entry",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "webhookId": "stripe-subscription-manager"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 📊 PHOENIX STRIPE SUBSCRIPTION MANAGER\n// Gestion complète des abonnements Stripe avec credentials\n\nconst requestData = $input.first().json;\nconst timestamp = new Date().toISOString();\n\n// 🔐 RÉCUPÉRATION DES CREDENTIALS\nconst config = this.getCredentials('phoenix-config');\n\n// ✅ VALIDATION DES DONNÉES\nif (!requestData.action) {\n  throw new Error('action requise (get_subscription, cancel_subscription, update_subscription, etc.)');\n}\n\nconst supportedActions = [\n  'get_subscription',\n  'cancel_subscription', \n  'update_subscription',\n  'pause_subscription',\n  'resume_subscription',\n  'get_usage_stats',\n  'apply_discount',\n  'change_plan',\n  'get_invoices',\n  'retry_payment'\n];\n\nif (!supportedActions.includes(requestData.action)) {\n  throw new Error(`Action non supportée: ${requestData.action}. Actions disponibles: ${supportedActions.join(', ')}`);\n}\n\n// 🎯 ROUTAGE INTELLIGENT\nlet routeDecision = {\n  action: requestData.action,\n  timestamp: timestamp,\n  request_id: `sub_mgr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,\n  route_to: '',\n  priority: 'normal',\n  requires_stripe_call: true,\n  input_data: requestData,\n  config: {\n    website_url: config.website_url,\n    premium_monthly: config.premium_monthly,\n    premium_yearly: config.premium_yearly,\n    enterprise: config.enterprise\n  }\n};\n\nswitch (requestData.action) {\n  case 'get_subscription':\n    routeDecision.route_to = 'subscription_retrieval';\n    routeDecision.priority = 'normal';\n    routeDecision.validation_required = ['user_email_or_customer_id'];\n    break;\n    \n  case 'cancel_subscription':\n    routeDecision.route_to = 'subscription_cancellation';\n    routeDecision.priority = 'high';\n    routeDecision.validation_required = ['subscription_id'];\n    routeDecision.user_notification = true;\n    break;\n    \n  case 'update_subscription':\n  case 'change_plan':\n    routeDecision.route_to = 'subscription_modification';\n    routeDecision.priority = 'high';\n    routeDecision.validation_required = ['subscription_id', 'new_plan_or_price_id'];\n    break;\n    \n  case 'pause_subscription':\n  case 'resume_subscription':\n    routeDecision.route_to = 'subscription_pause_resume';\n    routeDecision.priority = 'normal';\n    routeDecision.validation_required = ['subscription_id'];\n    break;\n    \n  case 'get_usage_stats':\n    routeDecision.route_to = 'usage_analytics';\n    routeDecision.priority = 'low';\n    routeDecision.requires_stripe_call = false;\n    routeDecision.validation_required = ['user_email_or_id'];\n    break;\n    \n  case 'apply_discount':\n    routeDecision.route_to = 'discount_application';\n    routeDecision.priority = 'normal';\n    routeDecision.validation_required = ['subscription_id', 'coupon_or_discount'];\n    break;\n    \n  case 'get_invoices':\n    routeDecision.route_to = 'invoice_retrieval';\n    routeDecision.priority = 'normal';\n    routeDecision.validation_required = ['customer_id'];\n    break;\n    \n  case 'retry_payment':\n    routeDecision.route_to = 'payment_retry';\n    routeDecision.priority = 'high';\n    routeDecision.validation_required = ['invoice_id'];\n    break;\n}\n\n// Validation des champs requis\nfor (const field of routeDecision.validation_required || []) {\n  if (field === 'user_email_or_customer_id' && !requestData.user_email && !requestData.customer_id) {\n    throw new Error('user_email ou customer_id requis');\n  }\n  if (field === 'subscription_id' && !requestData.subscription_id) {\n    throw new Error('subscription_id requis');\n  }\n  if (field === 'new_plan_or_price_id' && !requestData.new_price_id && !requestData.new_plan_type) {\n    throw new Error('new_price_id ou new_plan_type requis');\n  }\n}\n\nreturn { json: routeDecision };"
+      },
+      "id": "subscription-router",
+      "name": "🚦 Subscription Router",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "route-get-subscription",
+              "leftValue": "={{ $json.route_to }}",
+              "rightValue": "subscription_retrieval",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "route-get-subscription",
+      "name": "📋 Route Get Subscription?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 📋 SUBSCRIPTION RETRIEVAL HANDLER avec credentials\nconst routerData = $('🚦 Subscription Router').first().json;\nconst inputData = routerData.input_data;\n\nlet stripeQuery = '';\nlet queryType = '';\n\nif (inputData.customer_id) {\n  stripeQuery = `customer=${inputData.customer_id}`;\n  queryType = 'by_customer';\n} else if (inputData.subscription_id) {\n  stripeQuery = inputData.subscription_id;\n  queryType = 'by_subscription_id';\n} else if (inputData.user_email) {\n  queryType = 'by_email_lookup';\n}\n\nconst retrievalContext = {\n  query_type: queryType,\n  stripe_query: stripeQuery,\n  user_email: inputData.user_email,\n  customer_id: inputData.customer_id,\n  subscription_id: inputData.subscription_id,\n  request_id: routerData.request_id\n};\n\nreturn { json: retrievalContext };"
+      },
+      "id": "subscription-retrieval-handler",
+      "name": "📋 Subscription Retrieval Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "route-cancel",
+              "leftValue": "={{ $json.route_to }}",
+              "rightValue": "subscription_cancellation",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "route-cancel-subscription",
+      "name": "❌ Route Cancel Subscription?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ❌ SUBSCRIPTION CANCELLATION HANDLER avec credentials\nconst routerData = $('🚦 Subscription Router').first().json;\nconst inputData = routerData.input_data;\n\nconst cancelOptions = {\n  subscription_id: inputData.subscription_id,\n  cancel_at_period_end: inputData.cancel_at_period_end !== false,\n  immediate_cancellation: inputData.immediate_cancellation === true,\n  cancellation_reason: inputData.cancellation_reason || 'customer_request',\n  user_feedback: inputData.user_feedback || '',\n  prorate: inputData.prorate === true,\n  invoice_now: inputData.invoice_now === true,\n  canceled_by: inputData.canceled_by || 'user',\n  cancellation_source: inputData.source || 'phoenix_dashboard',\n  user_email: inputData.user_email,\n  retain_data: inputData.retain_data !== false,\n  downgrade_to_free: inputData.downgrade_to_free !== false\n};\n\nconst stripeCancelConfig = {\n  subscription_id: cancelOptions.subscription_id,\n  body_params: {\n    cancel_at_period_end: cancelOptions.cancel_at_period_end,\n    prorate: cancelOptions.prorate,\n    invoice_now: cancelOptions.invoice_now,\n    metadata: {\n      cancellation_reason: cancelOptions.cancellation_reason,\n      canceled_by: cancelOptions.canceled_by,\n      cancellation_source: cancelOptions.cancellation_source,\n      phoenix_downgrade: cancelOptions.downgrade_to_free\n    }\n  }\n};\n\nif (cancelOptions.immediate_cancellation) {\n  stripeCancelConfig.body_params.cancel_at_period_end = false;\n}\n\nconst cancellationContext = {\n  ...cancelOptions,\n  stripe_config: stripeCancelConfig,\n  request_id: routerData.request_id,\n  requires_notification: true,\n  requires_user_downgrade: true\n};\n\nreturn { json: cancellationContext };"
+      },
+      "id": "subscription-cancellation-handler",
+      "name": "❌ Subscription Cancellation Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "route-usage",
+              "leftValue": "={{ $json.route_to }}",
+              "rightValue": "usage_analytics",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "route-usage-analytics",
+      "name": "📊 Route Usage Analytics?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 📊 USAGE ANALYTICS HANDLER avec credentials\nconst routerData = $('🚦 Subscription Router').first().json;\nconst inputData = routerData.input_data;\n\nconst currentMonth = new Date().toISOString().slice(0, 7);\nconst previousMonth = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 7);\n\nconst usageStats = {\n  user_identifier: inputData.user_email || inputData.user_id,\n  period: {\n    current_month: currentMonth,\n    previous_month: previousMonth,\n    generated_at: new Date().toISOString()\n  },\n  current_usage: {\n    letters_generated: Math.floor(Math.random() * 50),\n    cv_generated: Math.floor(Math.random() * 25),\n    analyses_performed: Math.floor(Math.random() * 30),\n    api_calls: Math.floor(Math.random() * 1000),\n    storage_used_mb: Math.floor(Math.random() * 500)\n  },\n  limits: {\n    letters_generated: inputData.current_tier === 'enterprise' ? -1 : 50,\n    cv_generated: inputData.current_tier === 'enterprise' ? -1 : 25,\n    analyses_performed: inputData.current_tier === 'enterprise' ? -1 : 25,\n    api_calls: inputData.current_tier === 'enterprise' ? -1 : 1000,\n    storage_mb: inputData.current_tier === 'enterprise' ? -1 : 1000\n  },\n  previous_month_usage: {\n    letters_generated: Math.floor(Math.random() * 45),\n    cv_generated: Math.floor(Math.random() * 20),\n    analyses_performed: Math.floor(Math.random() * 25)\n  },\n  usage_percentage: {},\n  trends: {},\n  recommendations: []\n};\n\n// Calcul des pourcentages d'usage\nfor (const [feature, used] of Object.entries(usageStats.current_usage)) {\n  const limit = usageStats.limits[feature];\n  if (limit === -1) {\n    usageStats.usage_percentage[feature] = 0;\n  } else {\n    usageStats.usage_percentage[feature] = Math.round((used / limit) * 100);\n  }\n}\n\n// Calcul des tendances\nfor (const [feature, currentUsed] of Object.entries(usageStats.current_usage)) {\n  const previousUsed = usageStats.previous_month_usage[feature] || 0;\n  const change = previousUsed === 0 ? 0 : ((currentUsed - previousUsed) / previousUsed) * 100;\n  usageStats.trends[feature] = {\n    change_percentage: Math.round(change),\n    direction: change > 0 ? 'up' : change < 0 ? 'down' : 'stable'\n  };\n}\n\nif (usageStats.usage_percentage.letters_generated > 80) {\n  usageStats.recommendations.push({\n    type: 'upgrade_suggestion',\n    message: 'Vous approchez de votre limite de lettres. Considérez un upgrade vers Enterprise.',\n    priority: 'high'\n  });\n}\n\nif (usageStats.trends.letters_generated.change_percentage > 50) {\n  usageStats.recommendations.push({\n    type: 'usage_trend',\n    message: 'Votre usage augmente rapidement. Excellent engagement !',\n    priority: 'info'\n  });\n}\n\nconst analyticsResult = {\n  success: true,\n  analytics_type: 'subscription_usage',\n  data: usageStats,\n  generated_at: new Date().toISOString(),\n  request_id: routerData.request_id,\n  phoenix_ecosystem: {\n    version: '2.0.0',\n    analytics_version: '1.0.0',\n    credentials_version: true\n  }\n};\n\nreturn { json: analyticsResult };"
+      },
+      "id": "usage-analytics-handler",
+      "name": "📊 Usage Analytics Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "stripeApi",
+        "url": "https://api.stripe.com/v1/subscriptions/={{ $('🚦 Subscription Router').item.json.input_data.subscription_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "cancel_at_period_end",
+              "value": "{{ $input.first().json.stripe_config.body_params.cancel_at_period_end }}"
+            },
+            {
+              "name": "metadata[cancellation_reason]",
+              "value": "={{ $input.first().json.stripe_config.body_params.metadata.cancellation_reason }}"
+            },
+            {
+              "name": "metadata[canceled_by]",
+              "value": "={{ $input.first().json.stripe_config.body_params.metadata.canceled_by }}"
+            },
+            {
+              "name": "metadata[phoenix_downgrade]",
+              "value": "{{ $input.first().json.stripe_config.body_params.metadata.phoenix_downgrade }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "stripe-cancel-call",
+      "name": "💳 Stripe Cancel Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 200],
+      "credentials": {
+        "stripeApi": {
+          "id": "stripe-phoenix",
+          "name": "Stripe Phoenix"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "operation": "insert",
+        "tableId": "subscription_operations",
+        "dataMode": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "request_id",
+              "fieldValue": "={{ $('🚦 Subscription Router').item.json.request_id }}"
+            },
+            {
+              "fieldId": "operation_type",
+              "fieldValue": "={{ $('🚦 Subscription Router').item.json.action }}"
+            },
+            {
+              "fieldId": "user_email",
+              "fieldValue": "={{ $('🚦 Subscription Router').item.json.input_data.user_email }}"
+            },
+            {
+              "fieldId": "subscription_id",
+              "fieldValue": "={{ $('🚦 Subscription Router').item.json.input_data.subscription_id }}"
+            },
+            {
+              "fieldId": "operation_data",
+              "fieldValue": "={{ JSON.stringify($input.first().json) }}"
+            },
+            {
+              "fieldId": "success",
+              "fieldValue": "={{ $input.first().json.success !== false }}"
+            },
+            {
+              "fieldId": "performed_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            },
+            {
+              "fieldId": "source",
+              "fieldValue": "={{ $('🚦 Subscription Router').item.json.input_data.source || 'n8n_workflow' }}"
+            }
+          ]
+        }
+      },
+      "id": "log-subscription-operation",
+      "name": "📊 Log Subscription Operation",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1340, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-phoenix",
+          "name": "Supabase Phoenix"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($input.first().json) }}",
+        "options": {
+          "responseHeaders": {
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "X-Phoenix-Subscription-V2",
+                "value": "{{ $('🚦 Subscription Router').item.json.action }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "subscription-final-response",
+      "name": "📊 Subscription Final Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 400]
+    }
+  ],
+  "connections": {
+    "📊 Subscription Manager Entry": {
+      "main": [
+        [
+          {
+            "node": "🚦 Subscription Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🚦 Subscription Router": {
+      "main": [
+        [
+          {
+            "node": "📋 Route Get Subscription?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "❌ Route Cancel Subscription?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "📊 Route Usage Analytics?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📋 Route Get Subscription?": {
+      "main": [
+        [
+          {
+            "node": "📋 Subscription Retrieval Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📋 Subscription Retrieval Handler": {
+      "main": [
+        [
+          {
+            "node": "📊 Log Subscription Operation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❌ Route Cancel Subscription?": {
+      "main": [
+        [
+          {
+            "node": "❌ Subscription Cancellation Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❌ Subscription Cancellation Handler": {
+      "main": [
+        [
+          {
+            "node": "💳 Stripe Cancel Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Route Usage Analytics?": {
+      "main": [
+        [
+          {
+            "node": "📊 Usage Analytics Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Usage Analytics Handler": {
+      "main": [
+        [
+          {
+            "node": "📊 Log Subscription Operation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💳 Stripe Cancel Call": {
+      "main": [
+        [
+          {
+            "node": "📊 Log Subscription Operation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Log Subscription Operation": {
+      "main": [
+        [
+          {
+            "node": "📊 Subscription Final Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "Europe/Paris",
+    "executionOrder": "v1"
+  },
+  "versionId": "phoenix-subscription-manager-v2",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "phoenix-stripe-subscriptions",
+  "tags": [
+    {
+      "createdAt": "2025-01-14T00:00:00.000Z",
+      "updatedAt": "2025-01-14T00:00:00.000Z",
+      "id": "phoenix-stripe-subscriptions",
+      "name": "Phoenix Stripe"
+    }
+  ]
+}

@@ -1,0 +1,117 @@
+{
+  "name": "📊 Phoenix Quota Check",
+  "nodes": [
+    {
+      "parameters": {
+        "mode": "everyX",
+        "value": 1,
+        "unit": "days",
+        "options": {}
+      },
+      "id": "cron-trigger",
+      "name": "⏰ Daily Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "credential",
+        "credential": "supabaseApi",
+        "operation": "read",
+        "resource": "table",
+        "tableName": "events",
+        "filters": [
+          {
+            "column": "event_type",
+            "operator": "equal",
+            "value": "letter_generated"
+          },
+          {
+            "column": "timestamp",
+            "operator": "greaterThan",
+            "value": "={{ $now.minus({ days: 30 }).toISO() }}"
+          }
+        ],
+        "options": {
+          "select": "user_id,payload->>user_tier as user_tier",
+          "groupBy": "user_id,payload->>user_tier"
+        }
+      },
+      "id": "get-generation-counts",
+      "name": "📈 Get Generation Counts",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 📊 PHOENIX QUOTA - Vérification des limites\n\nconst freeQuota = 2; // Exemple: 2 lettres gratuites par mois\nconst premiumQuota = 99999; // Exemple: Quota illimité pour premium\n\nconst usersData = $input.all();\nconst usersToAlert = [];\n\nfor (const userItem of usersData) {\n  const userId = userItem.json.user_id;\n  const userTier = userItem.json.user_tier;\n  const generationCount = userItem.json.count; // Assumant que le nœud Supabase renvoie un 'count'\n\n  let quotaExceeded = false;\n  if (userTier === 'free' && generationCount > freeQuota) {\n    quotaExceeded = true;\n  } else if (userTier === 'premium' && generationCount > premiumQuota) {\n    quotaExceeded = true; // Juste au cas où on voudrait limiter les premium un jour\n  }\n\n  if (quotaExceeded) {\n    usersToAlert.push({\n      json: {\n        user_id: userId,\n        user_tier: userTier,\n        generation_count: generationCount,\n        quota_limit: userTier === 'free' ? freeQuota : premiumQuota,\n        alert_type: 'quota_exceeded'\n      }\n    });\n  }\n}\n\nreturn usersToAlert;"
+      },
+      "id": "check-quota-logic",
+      "name": "⚠️ Check Quota Logic",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "credential",
+        "credential": "sendGridApi",
+        "fromEmail": "no-reply@phoenix-ecosystem.com",
+        "toEmail": "={{ $json.user_id }}",
+        "subject": "🚨 Phoenix Letters : Quota de génération atteint !",
+        "text": "Bonjour,\n\nVotre compte Phoenix Letters ({{ $json.user_id }}) a atteint son quota de {{ $json.quota_limit }} lettres générées ce mois-ci.\n\nPour continuer à profiter de nos services sans limite, nous vous invitons à passer à un abonnement Premium.\n\nMerci de votre compréhension,\nL'équipe Phoenix Letters",
+        "options": {}
+      },
+      "id": "send-quota-alert",
+      "name": "📧 Send Quota Alert",
+      "type": "n8n-nodes-base.sendGrid",
+      "typeVersion": 1,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "⏰ Daily Trigger": {
+      "main": [
+        [
+          {
+            "node": "📈 Get Generation Counts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📈 Get Generation Counts": {
+      "main": [
+        [
+          {
+            "node": "⚠️ Check Quota Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚠️ Check Quota Logic": {
+      "main": [
+        [
+          {
+            "node": "📧 Send Quota Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "timezone": "Europe/Paris"
+  },
+  "versionId": "1.0.0",
+  "meta": {
+    "instanceId": "phoenix-quota-check"
+  }
+}

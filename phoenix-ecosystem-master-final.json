@@ -1,0 +1,486 @@
+{
+  "name": "🚀 Phoenix Ecosystem Master - Tour de Contrôle Final",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "phoenix-ecosystem",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "main-entry-point",
+      "name": "🌟 Phoenix Entry Point",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "webhookId": "phoenix-ecosystem"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 🎛️ PHOENIX ECOSYSTEM - MASTER CONTROLLER avec credentials\nconst inputData = $input.first().json;\nconst timestamp = new Date().toISOString();\n\n// 🔐 RÉCUPÉRATION DES CREDENTIALS\nconst config = this.getCredentials('phoenix-config');\n\n// ✅ VALIDATION GLOBALE\nif (!inputData.user_email) {\n  throw new Error('user_email requis');\n}\n\nif (!inputData.action_type) {\n  throw new Error('action_type requis (user_signup, generate_letter, generate_cv, premium_upgrade, etc.)');\n}\n\n// 🎯 CONFIGURATION MASTER\nconst masterConfig = {\n  user_email: inputData.user_email,\n  action_type: inputData.action_type,\n  user_tier: inputData.user_tier || 'free',\n  source: inputData.source || 'website',\n  session_id: `phoenix_master_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,\n  timestamp: timestamp,\n  request_id: `req_${Date.now()}`,\n  config: {\n    website_url: config.website_url,\n    n8n_webhook: config.n8n_webhook,\n    premium_monthly: config.premium_monthly,\n    premium_yearly: config.premium_yearly,\n    enterprise: config.enterprise\n  }\n};\n\n// 🚦 ROUTAGE INTELLIGENT\nlet routeDecision = {\n  ...masterConfig,\n  route_to: '',\n  priority: 'normal',\n  processing_data: {},\n  next_action: '',\n  context: {\n    feature_flags: {\n      ai_generation: true,\n      stripe_payments: true,\n      sso_enabled: true,\n      analytics_tracking: true\n    }\n  }\n};\n\nswitch (inputData.action_type) {\n  case 'user_signup':\n    routeDecision.route_to = 'user_onboarding';\n    routeDecision.priority = 'high';\n    routeDecision.processing_data = {\n      email: inputData.user_email,\n      password: inputData.password,\n      metadata: inputData.metadata || {}\n    };\n    routeDecision.next_action = 'welcome_sequence';\n    break;\n    \n  case 'generate_letter':\n    routeDecision.route_to = 'phoenix_letters';\n    routeDecision.priority = inputData.user_tier === 'premium' ? 'high' : 'normal';\n    routeDecision.processing_data = {\n      cv_content: inputData.cv_content,\n      job_offer: inputData.job_offer,\n      company_name: inputData.company_name,\n      tone: inputData.tone || 'professional',\n      reconversion_focus: inputData.reconversion_focus !== false\n    };\n    routeDecision.next_action = 'letter_delivery';\n    break;\n    \n  case 'generate_cv':\n    routeDecision.route_to = 'phoenix_cv';\n    routeDecision.priority = inputData.user_tier === 'enterprise' ? 'high' : 'normal';\n    routeDecision.processing_data = {\n      personal_info: inputData.personal_info,\n      experiences: inputData.experiences,\n      education: inputData.education,\n      skills: inputData.skills,\n      template_id: inputData.template_id || 'modern_ats',\n      ats_optimization: inputData.ats_optimization !== false,\n      job_description: inputData.job_description\n    };\n    routeDecision.next_action = 'cv_delivery';\n    break;\n    \n  case 'premium_upgrade':\n  case 'create_checkout':\n    routeDecision.route_to = 'billing_flow';\n    routeDecision.priority = 'high';\n    routeDecision.processing_data = {\n      plan_type: inputData.plan_type || 'premium_monthly',\n      success_url: inputData.success_url,\n      cancel_url: inputData.cancel_url,\n      trial_days: inputData.trial_days\n    };\n    routeDecision.next_action = 'payment_processing';\n    break;\n    \n  default:\n    throw new Error(`Action type non supportée: ${inputData.action_type}`);\n}\n\nreturn { json: routeDecision };"
+      },
+      "id": "master-controller",
+      "name": "🎛️ Master Controller",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "1",
+              "leftValue": "={{ $json.route_to }}",
+              "rightValue": "user_onboarding",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "route-onboarding",
+      "name": "👤 Route Onboarding?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.config.n8n_webhook }}/phoenix-signup",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"user_email\": \"{{ $json.user_email }}\",\n  \"password\": \"{{ $json.processing_data.password }}\",\n  \"metadata\": {{ JSON.stringify($json.processing_data.metadata) }},\n  \"timestamp\": \"{{ $json.timestamp }}\",\n  \"session_id\": \"{{ $json.session_id }}\"\n}",
+        "options": {}
+      },
+      "id": "call-user-signup",
+      "name": "👥 User Signup Flow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "1",
+              "leftValue": "={{ $json.route_to }}",
+              "rightValue": "phoenix_letters",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "route-letters",
+      "name": "🔥 Route Letters?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.config.n8n_webhook }}/phoenix-generate-letter",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"user_email\": \"{{ $json.user_email }}\",\n  \"user_tier\": \"{{ $json.user_tier }}\",\n  \"cv_content\": \"{{ $json.processing_data.cv_content }}\",\n  \"job_offer\": \"{{ $json.processing_data.job_offer }}\",\n  \"company_name\": \"{{ $json.processing_data.company_name }}\",\n  \"tone\": \"{{ $json.processing_data.tone }}\",\n  \"reconversion_focus\": {{ $json.processing_data.reconversion_focus }},\n  \"session_id\": \"{{ $json.session_id }}\"\n}",
+        "options": {}
+      },
+      "id": "call-letters-generator",
+      "name": "🔥 Letters Generator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "1",
+              "leftValue": "={{ $json.route_to }}",
+              "rightValue": "phoenix_cv",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "route-cv",
+      "name": "📄 Route CV?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 500]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.config.n8n_webhook }}/phoenix-generate-cv",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"user_email\": \"{{ $json.user_email }}\",\n  \"user_tier\": \"{{ $json.user_tier }}\",\n  \"personal_info\": {{ JSON.stringify($json.processing_data.personal_info) }},\n  \"experiences\": {{ JSON.stringify($json.processing_data.experiences) }},\n  \"education\": {{ JSON.stringify($json.processing_data.education) }},\n  \"skills\": {{ JSON.stringify($json.processing_data.skills) }},\n  \"template_id\": \"{{ $json.processing_data.template_id }}\",\n  \"ats_optimization\": {{ $json.processing_data.ats_optimization }},\n  \"job_description\": \"{{ $json.processing_data.job_description }}\",\n  \"session_id\": \"{{ $json.session_id }}\"\n}",
+        "options": {}
+      },
+      "id": "call-cv-generator",
+      "name": "📄 CV Generator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "1",
+              "leftValue": "={{ $json.route_to }}",
+              "rightValue": "billing_flow",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "route-billing",
+      "name": "💳 Route Billing?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 700]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 💳 PHOENIX BILLING avec credentials\nconst masterData = $('🎛️ Master Controller').first().json;\nconst processingData = masterData.processing_data;\nconst config = masterData.config;\n\nconst billingData = {\n  user_email: masterData.user_email,\n  plan_type: processingData.plan_type,\n  success_url: processingData.success_url || `${config.website_url}/success?session_id={CHECKOUT_SESSION_ID}`,\n  cancel_url: processingData.cancel_url || `${config.website_url}/pricing`,\n  trial_days: processingData.trial_days,\n  source: masterData.source,\n  session_id: masterData.session_id\n};\n\nreturn { json: billingData };"
+      },
+      "id": "stripe-checkout-builder",
+      "name": "💳 Stripe Checkout Builder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 600]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('🎛️ Master Controller').item.json.config.n8n_webhook }}/stripe-create-checkout",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "create-stripe-session",
+      "name": "🛒 Create Stripe Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 📊 PHOENIX MASTER - Consolidation des résultats\nconst masterData = $('🎛️ Master Controller').first().json;\n\nlet serviceResult = null;\nlet serviceType = '';\n\ntry {\n  switch (masterData.route_to) {\n    case 'user_onboarding':\n      serviceResult = $('👥 User Signup Flow').first().json;\n      serviceType = 'signup';\n      break;\n    case 'phoenix_letters':\n      serviceResult = $('🔥 Letters Generator').first().json;\n      serviceType = 'letter_generation';\n      break;\n    case 'phoenix_cv':\n      serviceResult = $('📄 CV Generator').first().json;\n      serviceType = 'cv_generation';\n      break;\n    case 'billing_flow':\n      serviceResult = $('🛒 Create Stripe Session').first().json;\n      serviceType = 'billing';\n      break;\n    default:\n      serviceResult = { success: false, error: 'Route non supportée' };\n      serviceType = 'error';\n  }\n} catch (error) {\n  serviceResult = { success: false, error: error.message };\n  serviceType = 'error';\n}\n\nconst consolidatedResult = {\n  success: serviceResult?.success || false,\n  service_type: serviceType,\n  route_taken: masterData.route_to,\n  user_email: masterData.user_email,\n  user_tier: masterData.user_tier,\n  session_id: masterData.session_id,\n  request_id: masterData.request_id,\n  processing_time_ms: Date.now() - new Date(masterData.timestamp).getTime(),\n  service_result: serviceResult,\n  feature_flags: masterData.context.feature_flags,\n  phoenix_ecosystem_version: '2.0.0',\n  credentials_version: true,\n  completed_at: new Date().toISOString()\n};\n\nswitch (serviceType) {\n  case 'letter_generation':\n    consolidatedResult.metrics = {\n      quality_score: serviceResult?.data?.quality_score || 0,\n      generation_time_s: serviceResult?.data?.generation_time_s || 0,\n      word_count: serviceResult?.data?.word_count || 0\n    };\n    break;\n  case 'cv_generation':\n    consolidatedResult.metrics = {\n      ats_score: serviceResult?.data?.ats_score || 0,\n      sections_count: serviceResult?.data?.sections_count || 0,\n      generation_time_s: serviceResult?.data?.generation_time_s || 0\n    };\n    break;\n  case 'billing':\n    consolidatedResult.metrics = {\n      checkout_created: serviceResult?.success || false,\n      plan_type: serviceResult?.plan_type || 'unknown'\n    };\n    break;\n}\n\nreturn { json: consolidatedResult };"
+      },
+      "id": "result-consolidator",
+      "name": "📊 Result Consolidator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "operation": "insert",
+        "tableId": "events",
+        "dataMode": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "event_type",
+              "fieldValue": "ecosystem_request"
+            },
+            {
+              "fieldId": "user_id",
+              "fieldValue": "={{ $json.user_email }}"
+            },
+            {
+              "fieldId": "payload",
+              "fieldValue": "={{ JSON.stringify({\n  service_type: $json.service_type,\n  route_taken: $json.route_taken,\n  user_tier: $json.user_tier,\n  success: $json.success,\n  processing_time_ms: $json.processing_time_ms,\n  session_id: $json.session_id,\n  request_id: $json.request_id,\n  feature_flags: $json.feature_flags,\n  metrics: $json.metrics,\n  phoenix_version: $json.phoenix_ecosystem_version\n}) }}"
+            },
+            {
+              "fieldId": "timestamp",
+              "fieldValue": "={{ $json.completed_at }}"
+            },
+            {
+              "fieldId": "source",
+              "fieldValue": "phoenix_ecosystem_master"
+            }
+          ]
+        }
+      },
+      "id": "master-event-sourcing",
+      "name": "📈 Master Event Sourcing",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1560, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-phoenix",
+          "name": "Supabase Phoenix"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": {{ $('📊 Result Consolidator').first().json.success }},\n  \"message\": \"🚀 Phoenix Ecosystem request processed\",\n  \"data\": {\n    \"service_type\": \"{{ $('📊 Result Consolidator').first().json.service_type }}\",\n    \"route_taken\": \"{{ $('📊 Result Consolidator').first().json.route_taken }}\",\n    \"user_tier\": \"{{ $('📊 Result Consolidator').first().json.user_tier }}\",\n    \"processing_time_ms\": {{ $('📊 Result Consolidator').first().json.processing_time_ms }},\n    \"session_id\": \"{{ $('📊 Result Consolidator').first().json.session_id }}\",\n    \"metrics\": {{ JSON.stringify($('📊 Result Consolidator').first().json.metrics) }}\n  },\n  \"service_result\": {{ JSON.stringify($('📊 Result Consolidator').first().json.service_result) }},\n  \"phoenix_ecosystem\": {\n    \"version\": \"{{ $('📊 Result Consolidator').first().json.phoenix_ecosystem_version }}\",\n    \"completed_at\": \"{{ $('📊 Result Consolidator').first().json.completed_at }}\",\n    \"credentials_version\": {{ $('📊 Result Consolidator').first().json.credentials_version }},\n    \"feature_flags\": {{ JSON.stringify($('📊 Result Consolidator').first().json.feature_flags) }}\n  }\n}",
+        "options": {}
+      },
+      "id": "master-final-response",
+      "name": "✅ Master Final Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1780, 400]
+    }
+  ],
+  "connections": {
+    "🌟 Phoenix Entry Point": {
+      "main": [
+        [
+          {
+            "node": "🎛️ Master Controller",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🎛️ Master Controller": {
+      "main": [
+        [
+          {
+            "node": "👤 Route Onboarding?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "🔥 Route Letters?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "📄 Route CV?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "💳 Route Billing?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "👤 Route Onboarding?": {
+      "main": [
+        [
+          {
+            "node": "👥 User Signup Flow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "👥 User Signup Flow": {
+      "main": [
+        [
+          {
+            "node": "📊 Result Consolidator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔥 Route Letters?": {
+      "main": [
+        [
+          {
+            "node": "🔥 Letters Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔥 Letters Generator": {
+      "main": [
+        [
+          {
+            "node": "📊 Result Consolidator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📄 Route CV?": {
+      "main": [
+        [
+          {
+            "node": "📄 CV Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📄 CV Generator": {
+      "main": [
+        [
+          {
+            "node": "📊 Result Consolidator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💳 Route Billing?": {
+      "main": [
+        [
+          {
+            "node": "💳 Stripe Checkout Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💳 Stripe Checkout Builder": {
+      "main": [
+        [
+          {
+            "node": "🛒 Create Stripe Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🛒 Create Stripe Session": {
+      "main": [
+        [
+          {
+            "node": "📊 Result Consolidator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Result Consolidator": {
+      "main": [
+        [
+          {
+            "node": "📈 Master Event Sourcing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📈 Master Event Sourcing": {
+      "main": [
+        [
+          {
+            "node": "✅ Master Final Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "Europe/Paris",
+    "executionOrder": "v1"
+  },
+  "versionId": "phoenix-master-final-v2",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "phoenix-ecosystem-master-final",
+  "tags": [
+    {
+      "createdAt": "2025-01-14T00:00:00.000Z",
+      "updatedAt": "2025-01-14T00:00:00.000Z",
+      "id": "phoenix-core",
+      "name": "Phoenix Core"
+    }
+  ]
+}

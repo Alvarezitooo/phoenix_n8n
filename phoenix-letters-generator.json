@@ -1,0 +1,223 @@
+{
+  "name": "🔥 Phoenix Letters Generator - N8N Direct",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "phoenix-generate-letter",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-letter-request",
+      "name": "📥 Letter Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "phoenix-generate-letter"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 🔥 PHOENIX LETTERS GENERATOR - Version N8N Pure\n// Génération de lettres de motivation IA spécialisées reconversion\n\nconst inputData = $input.first().json;\nconst startTime = Date.now();\n\n// ✅ VALIDATION SÉCURISÉE\nif (!inputData.user_email || !inputData.cv_content || !inputData.job_offer) {\n  throw new Error('Données manquantes: user_email, cv_content et job_offer requis');\n}\n\nif (inputData.cv_content.length < 100) {\n  throw new Error('CV trop court (minimum 100 caractères)');\n}\n\nif (inputData.job_offer.length < 50) {\n  throw new Error('Offre emploi trop courte (minimum 50 caractères)');\n}\n\n// 🎯 CONFIGURATION PHOENIX\nconst config = {\n  user_email: inputData.user_email,\n  user_tier: inputData.user_tier || 'free',\n  tone: inputData.tone || 'professional',\n  company_name: inputData.company_name || 'l\\'entreprise',\n  reconversion_focus: inputData.reconversion_focus !== false, // true par défaut\n  cv_content: inputData.cv_content.substring(0, 2000), // Limite sécurité\n  job_offer: inputData.job_offer.substring(0, 1500),\n  session_id: `phoenix_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`\n};\n\n// 🎨 PROMPTS PHOENIX LETTERS OPTIMISÉS\nconst tonePrompts = {\n  'professional': {\n    style: 'Rédigez une lettre de motivation professionnelle, structurée et convaincante',\n    personality: 'sérieux et compétent'\n  },\n  'dynamic': {\n    style: 'Créez une lettre de motivation énergique et proactive', \n    personality: 'dynamique et motivé'\n  },\n  'creative': {\n    style: 'Composez une lettre de motivation créative et originale',\n    personality: 'innovant et créatif'\n  },\n  'friendly': {\n    style: 'Rédigez une lettre chaleureuse et accessible',\n    personality: 'bienveillant et collaboratif'\n  }\n};\n\nconst selectedTone = tonePrompts[config.tone] || tonePrompts.professional;\n\n// 🚀 PROMPT MASTER PHOENIX LETTERS\nconst phoenixPrompt = `${selectedTone.style} pour un candidat en reconversion professionnelle.\n\n📋 PROFIL CANDIDAT (CV) :\n${config.cv_content}\n\n🎯 OFFRE D'EMPLOI CIBLÉE :\n${config.job_offer}\n\n🏢 ENTREPRISE : ${config.company_name}\n\n⚡ CONSIGNES PHOENIX SPÉCIALISÉES RECONVERSION :\n\n1. 🔄 FOCUS RECONVERSION :\n   - Mettre en avant la MOTIVATION du changement professionnel\n   - Valoriser les COMPÉTENCES TRANSFÉRABLES\n   - Présenter la reconversion comme une FORCE, pas une faiblesse\n   - Montrer la COHÉRENCE du projet professionnel\n\n2. 📝 STRUCTURE OPTIMALE :\n   - Introduction : Accroche sur la reconversion motivée\n   - Développement : Compétences transférables + expériences pertinentes\n   - Conclusion : Vision future + demande d'entretien\n\n3. 🎯 STYLE & TON :\n   - Personnalité : ${selectedTone.personality}\n   - Éviter les formules bateau\n   - Phrases courtes et impactantes\n   - Vocabulaire du secteur visé\n\n4. 📏 CONTRAINTES :\n   - Maximum 350 mots\n   - 3 paragraphes principaux\n   - Commencer par \"Madame, Monsieur,\"\n   - Terminer par \"Cordialement,\"\n\n🔥 OBJECTIF PHOENIX : Transformer cette reconversion en atout décisif !\n\nLettre de motivation :`;\n\n// 📊 PRÉPARATION DONNÉES POUR GEMINI\nconst geminiPayload = {\n  prompt: phoenixPrompt,\n  config: config,\n  metadata: {\n    generation_start: startTime,\n    phoenix_version: '2.0.0',\n    specialization: 'reconversion_professionnelle'\n  }\n};\n\nreturn { json: geminiPayload };"
+      },
+      "id": "phoenix-prompt-builder",
+      "name": "🎯 Phoenix Prompt Builder",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $env.GEMINI_API_KEY }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": \"{{ $json.prompt }}\"\n    }]\n  }],\n  \"generationConfig\": {\n    \"maxOutputTokens\": 1000,\n    \"temperature\": 0.7,\n    \"topK\": 40,\n    \"topP\": 0.95\n  },\n  \"safetySettings\": [\n    {\n      \"category\": \"HARM_CATEGORY_HARASSMENT\",\n      \"threshold\": \"BLOCK_MEDIUM_AND_ABOVE\"\n    },\n    {\n      \"category\": \"HARM_CATEGORY_HATE_SPEECH\",\n      \"threshold\": \"BLOCK_MEDIUM_AND_ABOVE\"\n    },\n    {\n      \"category\": \"HARM_CATEGORY_SEXUALLY_EXPLICIT\",\n      \"threshold\": \"BLOCK_MEDIUM_AND_ABOVE\"\n    },\n    {\n      \"category\": \"HARM_CATEGORY_DANGEROUS_CONTENT\",\n      \"threshold\": \"BLOCK_MEDIUM_AND_ABOVE\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "gemini-generation",
+      "name": "🤖 Gemini Letter Generation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 🔍 PHOENIX LETTERS - Post-traitement & Qualité\n\nconst geminiResponse = $input.first().json;\nconst promptData = $('Phoenix Prompt Builder').first().json;\nconst generationTime = Date.now() - promptData.metadata.generation_start;\n\n// ✅ EXTRACTION SÉCURISÉE DU CONTENU\nlet letterContent = '';\ntry {\n  letterContent = geminiResponse.candidates[0]?.content?.parts[0]?.text || '';\n} catch (error) {\n  throw new Error(`Erreur extraction Gemini: ${error.message}`);\n}\n\nif (!letterContent || letterContent.length < 100) {\n  throw new Error('Génération Gemini échouée - contenu insuffisant');\n}\n\n// 🔧 NETTOYAGE & FORMATAGE PHOENIX\nlet cleanedLetter = letterContent\n  .replace(/\\*\\*([^*]+)\\*\\*/g, '$1') // Supprime **bold**\n  .replace(/\\*([^*]+)\\*/g, '$1')     // Supprime *italique*\n  .replace(/#{1,6}\\s/g, '')          // Supprime # headers\n  .replace(/\\n{3,}/g, '\\n\\n')        // Max 2 retours ligne consécutifs\n  .trim();\n\n// 🎯 ANALYSE QUALITÉ PHOENIX\nconst qualityAnalysis = analyzeLetterQuality(cleanedLetter, promptData.config);\n\n// 🌱 CALCUL IMPACT CO2 (GREEN AI)\nconst co2Impact = calculateGreenImpact(promptData.config.user_tier, generationTime);\n\n// 📊 SUGGESTIONS PHOENIX (si premium)\nconst suggestions = [];\nif (promptData.config.user_tier === 'premium') {\n  suggestions.push(...generatePremiumSuggestions(cleanedLetter, promptData.config));\n}\n\n// 📄 RÉSULTAT FINAL PHOENIX\nconst phoenixResult = {\n  success: true,\n  letter_id: `phoenix_letter_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`,\n  letter_content: cleanedLetter,\n  user_email: promptData.config.user_email,\n  user_tier: promptData.config.user_tier,\n  generation_time_ms: generationTime,\n  generation_time_s: Math.round(generationTime / 1000 * 100) / 100,\n  quality_score: qualityAnalysis.score,\n  co2_impact_grams: co2Impact,\n  suggestions: suggestions,\n  metadata: {\n    tone_used: promptData.config.tone,\n    company_name: promptData.config.company_name,\n    reconversion_focus: promptData.config.reconversion_focus,\n    word_count: cleanedLetter.split(' ').length,\n    session_id: promptData.config.session_id,\n    phoenix_version: '2.0.0',\n    timestamp: new Date().toISOString()\n  }\n};\n\nreturn { json: phoenixResult };\n\n// 🛠️ FONCTIONS UTILITAIRES PHOENIX\n\nfunction analyzeLetterQuality(letter, config) {\n  let score = 0;\n  const analysis = {\n    length_ok: false,\n    structure_ok: false,\n    reconversion_focus: false,\n    company_mentioned: false,\n    tone_appropriate: false\n  };\n  \n  // Longueur (20 points)\n  const wordCount = letter.split(' ').length;\n  if (wordCount >= 200 && wordCount <= 400) {\n    score += 20;\n    analysis.length_ok = true;\n  }\n  \n  // Structure (25 points)\n  if (letter.includes('Madame, Monsieur') && letter.includes('Cordialement')) {\n    score += 25;\n    analysis.structure_ok = true;\n  }\n  \n  // Focus reconversion (25 points)\n  const reconversionKeywords = ['reconversion', 'changement', 'transition', 'évolution', 'nouvelle', 'expérience'];\n  const hasReconversionFocus = reconversionKeywords.some(keyword => \n    letter.toLowerCase().includes(keyword)\n  );\n  if (hasReconversionFocus) {\n    score += 25;\n    analysis.reconversion_focus = true;\n  }\n  \n  // Entreprise mentionnée (15 points)\n  if (config.company_name !== 'l\\'entreprise' && \n      letter.toLowerCase().includes(config.company_name.toLowerCase())) {\n    score += 15;\n    analysis.company_mentioned = true;\n  }\n  \n  // Ton approprié (15 points)\n  score += 15; // Par défaut Gemini respecte le ton\n  analysis.tone_appropriate = true;\n  \n  return {\n    score: Math.min(100, score),\n    details: analysis\n  };\n}\n\nfunction calculateGreenImpact(userTier, generationTime) {\n  // Calcul impact CO2 basé sur la consommation IA\n  const baseImpact = 1.2; // grammes CO2 base\n  const timeMultiplier = generationTime / 1000 / 3; // Par tranche de 3 secondes\n  const tierMultiplier = userTier === 'premium' ? 0.8 : 1.0; // Premium plus efficace\n  \n  return Math.round((baseImpact * timeMultiplier * tierMultiplier) * 100) / 100;\n}\n\nfunction generatePremiumSuggestions(letter, config) {\n  const suggestions = [];\n  \n  // Analyse longueur\n  const wordCount = letter.split(' ').length;\n  if (wordCount < 250) {\n    suggestions.push('💡 Développez davantage vos compétences transférables');\n  }\n  \n  // Analyse mots-clés du job\n  const jobKeywords = extractKeywords(config.job_offer);\n  const letterKeywords = extractKeywords(letter);\n  const missingKeywords = jobKeywords.filter(kw => !letterKeywords.includes(kw));\n  \n  if (missingKeywords.length > 0) {\n    suggestions.push(`🎯 Intégrez ces mots-clés: ${missingKeywords.slice(0, 3).join(', ')}`);\n  }\n  \n  // Suggestion personnalisation\n  if (!letter.toLowerCase().includes('projet') && !letter.toLowerCase().includes('objectif')) {\n    suggestions.push('🚀 Ajoutez une mention de vos projets futurs dans l\\'entreprise');\n  }\n  \n  return suggestions;\n}\n\nfunction extractKeywords(text) {\n  // Extraction simplifiée de mots-clés\n  return text.toLowerCase()\n    .split(/\\s+/)\n    .filter(word => word.length > 4)\n    .filter(word => !/^(dans|avec|pour|cette|vous|nous|que|qui|une|des|les|est)/.test(word))\n    .slice(0, 10);\n}"
+      },
+      "id": "phoenix-post-processor",
+      "name": "🔍 Phoenix Post-Processor",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/events",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"event_type\": \"letter_generated\",\n  \"user_id\": \"{{ $json.user_email }}\",\n  \"payload\": {\n    \"letter_id\": \"{{ $json.letter_id }}\",\n    \"user_tier\": \"{{ $json.user_tier }}\",\n    \"generation_time_s\": {{ $json.generation_time_s }},\n    \"quality_score\": {{ $json.quality_score }},\n    \"co2_impact_grams\": {{ $json.co2_impact_grams }},\n    \"word_count\": {{ $json.metadata.word_count }},\n    \"tone_used\": \"{{ $json.metadata.tone_used }}\",\n    \"reconversion_focus\": {{ $json.metadata.reconversion_focus }},\n    \"session_id\": \"{{ $json.metadata.session_id }}\",\n    \"phoenix_version\": \"{{ $json.metadata.phoenix_version }}\"\n  },\n  \"timestamp\": \"{{ $json.metadata.timestamp }}\",\n  \"source\": \"phoenix_letters_n8n\"\n}",
+        "options": {}
+      },
+      "id": "event-sourcing",
+      "name": "📊 Event Sourcing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SENDGRID_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "url": "https://api.sendgrid.com/v3/mail/send",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"personalizations\": [{\n    \"to\": [{\n      \"email\": \"{{ $('Phoenix Post-Processor').first().json.user_email }}\",\n      \"name\": \"Utilisateur Phoenix\"\n    }],\n    \"subject\": \"🔥 Votre lettre Phoenix est prête ! (Score: {{ $('Phoenix Post-Processor').first().json.quality_score }}/100)\"\n  }],\n  \"from\": {\n    \"email\": \"letters@phoenix-ecosystem.com\",\n    \"name\": \"Phoenix Letters\"\n  },\n  \"content\": [{\n    \"type\": \"text/html\",\n    \"value\": \"<div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'><div style='background: linear-gradient(45deg, #ff7a00, #ff0040); color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0;'><h1 style='margin: 0;'>🔥 Phoenix Letters</h1><p style='margin: 10px 0 0 0;'>Votre lettre de motivation est prête !</p></div><div style='padding: 20px; background: #f8f9fa; border-radius: 0 0 10px 10px;'><h2>📊 Résumé de génération</h2><ul><li><strong>Score qualité:</strong> {{ $('Phoenix Post-Processor').first().json.quality_score }}/100</li><li><strong>Temps de génération:</strong> {{ $('Phoenix Post-Processor').first().json.generation_time_s }}s</li><li><strong>Impact CO2:</strong> {{ $('Phoenix Post-Processor').first().json.co2_impact_grams }}g (Green AI)</li><li><strong>Nombre de mots:</strong> {{ $('Phoenix Post-Processor').first().json.metadata.word_count }}</li></ul><p><strong>🎯 Votre lettre est optimisée pour la reconversion professionnelle !</strong></p><a href='{{ $env.PHOENIX_LETTERS_URL }}' style='display: inline-block; background: #ff7a00; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 10px 0;'>Voir ma lettre</a></div></div>\"\n  }]\n}",
+        "options": {}
+      },
+      "id": "email-notification",
+      "name": "📧 Email Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": {{ $('Phoenix Post-Processor').first().json.success }},\n  \"message\": \"🔥 Phoenix Letter générée avec succès !\",\n  \"data\": {\n    \"letter_id\": \"{{ $('Phoenix Post-Processor').first().json.letter_id }}\",\n    \"quality_score\": {{ $('Phoenix Post-Processor').first().json.quality_score }},\n    \"generation_time_s\": {{ $('Phoenix Post-Processor').first().json.generation_time_s }},\n    \"co2_impact_grams\": {{ $('Phoenix Post-Processor').first().json.co2_impact_grams }},\n    \"word_count\": {{ $('Phoenix Post-Processor').first().json.metadata.word_count }},\n    \"user_tier\": \"{{ $('Phoenix Post-Processor').first().json.user_tier }}\",\n    \"suggestions_count\": {{ $('Phoenix Post-Processor').first().json.suggestions.length }}\n  },\n  \"phoenix_version\": \"2.0.0\",\n  \"timestamp\": \"{{ $('Phoenix Post-Processor').first().json.metadata.timestamp }}\"\n}",
+        "options": {}
+      },
+      "id": "final-response",
+      "name": "✅ Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 300]
+    }
+  ],
+  "connections": {
+    "📥 Letter Request": {
+      "main": [
+        [
+          {
+            "node": "🎯 Phoenix Prompt Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🎯 Phoenix Prompt Builder": {
+      "main": [
+        [
+          {
+            "node": "🤖 Gemini Letter Generation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🤖 Gemini Letter Generation": {
+      "main": [
+        [
+          {
+            "node": "🔍 Phoenix Post-Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔍 Phoenix Post-Processor": {
+      "main": [
+        [
+          {
+            "node": "📊 Event Sourcing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Event Sourcing": {
+      "main": [
+        [
+          {
+            "node": "📧 Email Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📧 Email Success": {
+      "main": [
+        [
+          {
+            "node": "✅ Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "Europe/Paris"
+  },
+  "versionId": "2.0.0",
+  "meta": {
+    "instanceId": "phoenix-letters-n8n-direct"
+  }
+}

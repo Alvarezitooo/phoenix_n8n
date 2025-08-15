@@ -1,0 +1,117 @@
+{
+  "name": "🩺 Phoenix Health Check",
+  "nodes": [
+    {
+      "parameters": {
+        "mode": "everyX",
+        "value": 6,
+        "unit": "hours",
+        "options": {}
+      },
+      "id": "cron-trigger",
+      "name": "⏰ Cron Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/healthz",
+        "authentication": "none",
+        "options": {}
+      },
+      "id": "health-check-request",
+      "name": "❤️ Health Check Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "1",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": "200",
+              "operator": {
+                "type": "number",
+                "operation": "notEquals"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "check-status-code",
+      "name": "❌ Check Status Code",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "credential",
+        "credential": "sendGridApi",
+        "fromEmail": "no-reply@phoenix-ecosystem.com",
+        "toEmail": "contact.phoenixletters@gmail.com",
+        "subject": "🚨 ALERTE : n8n Phoenix est HORS LIGNE !",
+        "text": "Le service n8n Phoenix ne répond pas correctement. Statut : {{ $json.statusCode }}. Vérifiez l'instance immédiatement.",
+        "options": {}
+      },
+      "id": "send-alert-email",
+      "name": "📧 Send Alert Email",
+      "type": "n8n-nodes-base.sendGrid",
+      "typeVersion": 1,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "⏰ Cron Trigger": {
+      "main": [
+        [
+          {
+            "node": "❤️ Health Check Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❤️ Health Check Request": {
+      "main": [
+        [
+          {
+            "node": "❌ Check Status Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❌ Check Status Code": {
+      "main": [
+        [
+          {
+            "node": "📧 Send Alert Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "timezone": "Europe/Paris"
+  },
+  "versionId": "1.0.0",
+  "meta": {
+    "instanceId": "phoenix-health-check"
+  }
+}

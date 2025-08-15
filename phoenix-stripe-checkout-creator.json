@@ -1,0 +1,360 @@
+{
+  "name": "🛒 Phoenix Stripe Checkout Creator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "stripe-create-checkout",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "checkout-request-entry",
+      "name": "💳 Checkout Request Entry",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "webhookId": "stripe-create-checkout"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 🛒 PHOENIX STRIPE CHECKOUT CREATOR v2\n// Crée des sessions de checkout Stripe avec credentials\n\nconst requestData = $input.first().json;\nconst timestamp = new Date().toISOString();\n\n// 🔐 RÉCUPÉRATION DES CREDENTIALS\nconst config = this.getCredentials('phoenix-config');\n\n// ✅ VALIDATION DES DONNÉES\nif (!requestData.user_email) {\n  throw new Error('user_email requis');\n}\n\nif (!requestData.plan_type) {\n  throw new Error('plan_type requis (premium_monthly, premium_yearly, enterprise)');\n}\n\n// 🎯 CONFIGURATION DES PLANS STRIPE\nconst stripePlans = {\n  'premium_monthly': {\n    price_id: config.premium_monthly || 'price_premium_monthly',\n    amount_eur: 9.99,\n    interval: 'month',\n    features: ['Lettres illimitées', 'CV premium', 'Support prioritaire']\n  },\n  'premium_yearly': {\n    price_id: config.premium_yearly || 'price_premium_yearly',\n    amount_eur: 99.99,\n    interval: 'year',\n    features: ['Lettres illimitées', 'CV premium', 'Support prioritaire', '2 mois gratuits']\n  },\n  'enterprise': {\n    price_id: config.enterprise || 'price_enterprise',\n    amount_eur: 299.99,\n    interval: 'year',\n    features: ['Tout Premium', 'API Access', 'White-label', 'Support dédié']\n  }\n};\n\nconst selectedPlan = stripePlans[requestData.plan_type];\nif (!selectedPlan) {\n  throw new Error(`Plan non supporté: ${requestData.plan_type}. Plans disponibles: ${Object.keys(stripePlans).join(', ')}`);\n}\n\n// 🌐 CONFIGURATION URLS\nconst baseUrl = config.website_url || 'https://phoenix-ecosystem.com';\nconst successUrl = requestData.success_url || `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`;\nconst cancelUrl = requestData.cancel_url || `${baseUrl}/pricing`;\n\n// 🎫 CONSTRUCTION SESSION CHECKOUT\nconst checkoutSession = {\n  mode: 'subscription',\n  payment_method_types: ['card'],\n  customer_email: requestData.user_email,\n  line_items: [{\n    price: selectedPlan.price_id,\n    quantity: 1\n  }],\n  success_url: successUrl,\n  cancel_url: cancelUrl,\n  metadata: {\n    user_email: requestData.user_email,\n    plan_type: requestData.plan_type,\n    source: requestData.source || 'phoenix_website',\n    user_id: requestData.user_id || '',\n    phoenix_ecosystem_version: '2.0.0',\n    created_via: 'n8n_workflow_v2'\n  },\n  billing_address_collection: 'required',\n  tax_id_collection: { enabled: true },\n  subscription_data: {\n    trial_period_days: requestData.trial_days || (requestData.plan_type === 'premium_monthly' ? 7 : 0),\n    metadata: {\n      plan_type: requestData.plan_type,\n      user_email: requestData.user_email,\n      phoenix_signup_source: requestData.source || 'website'\n    }\n  },\n  allow_promotion_codes: true,\n  automatic_tax: { enabled: true },\n  custom_text: {\n    submit: {\n      message: `Rejoignez Phoenix ${requestData.plan_type.split('_')[0].toUpperCase()} et révolutionnez votre reconversion !`\n    }\n  }\n};\n\nconst creationContext = {\n  request_id: `checkout_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,\n  user_email: requestData.user_email,\n  plan_type: requestData.plan_type,\n  plan_details: selectedPlan,\n  created_at: timestamp,\n  source: requestData.source || 'phoenix_website',\n  conversion_context: {\n    utm_source: requestData.utm_source,\n    utm_campaign: requestData.utm_campaign,\n    utm_medium: requestData.utm_medium,\n    referrer: requestData.referrer,\n    landing_page: requestData.landing_page\n  },\n  stripe_config: checkoutSession\n};\n\nreturn { json: creationContext };"
+      },
+      "id": "checkout-session-builder",
+      "name": "🛒 Checkout Session Builder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "stripeApi",
+        "url": "https://api.stripe.com/v1/checkout/sessions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "mode",
+              "value": "={{ $json.stripe_config.mode }}"
+            },
+            {
+              "name": "customer_email",
+              "value": "={{ $json.stripe_config.customer_email }}"
+            },
+            {
+              "name": "line_items[0][price]",
+              "value": "={{ $json.stripe_config.line_items[0].price }}"
+            },
+            {
+              "name": "line_items[0][quantity]",
+              "value": "={{ $json.stripe_config.line_items[0].quantity }}"
+            },
+            {
+              "name": "success_url",
+              "value": "={{ $json.stripe_config.success_url }}"
+            },
+            {
+              "name": "cancel_url",
+              "value": "={{ $json.stripe_config.cancel_url }}"
+            },
+            {
+              "name": "metadata[user_email]",
+              "value": "={{ $json.stripe_config.metadata.user_email }}"
+            },
+            {
+              "name": "metadata[plan_type]",
+              "value": "={{ $json.stripe_config.metadata.plan_type }}"
+            },
+            {
+              "name": "metadata[source]",
+              "value": "={{ $json.stripe_config.metadata.source }}"
+            },
+            {
+              "name": "billing_address_collection",
+              "value": "={{ $json.stripe_config.billing_address_collection }}"
+            },
+            {
+              "name": "allow_promotion_codes",
+              "value": "{{ $json.stripe_config.allow_promotion_codes }}"
+            },
+            {
+              "name": "automatic_tax[enabled]",
+              "value": "{{ $json.stripe_config.automatic_tax.enabled }}"
+            },
+            {
+              "name": "subscription_data[trial_period_days]",
+              "value": "={{ $json.stripe_config.subscription_data.trial_period_days }}"
+            },
+            {
+              "name": "custom_text[submit][message]",
+              "value": "={{ $json.stripe_config.custom_text.submit.message }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "create-stripe-session",
+      "name": "💳 Create Stripe Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 400],
+      "credentials": {
+        "stripeApi": {
+          "id": "stripe-phoenix",
+          "name": "Stripe Phoenix"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-stripe-success",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "check-creation-success",
+      "name": "✅ Check Creation Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ✅ CHECKOUT SUCCESS PROCESSOR v2\nconst creationContext = $('🛒 Checkout Session Builder').first().json;\nconst stripeSession = $('💳 Create Stripe Session').first().json;\n\nconst successResponse = {\n  success: true,\n  checkout_created: true,\n  session_id: stripeSession.id,\n  checkout_url: stripeSession.url,\n  plan_type: creationContext.plan_type,\n  plan_details: {\n    name: creationContext.plan_details.amount_eur + '€/' + creationContext.plan_details.interval,\n    features: creationContext.plan_details.features,\n    trial_days: stripeSession.subscription_data?.trial_period_days || 0\n  },\n  customer_email: creationContext.user_email,\n  success_url: stripeSession.success_url,\n  cancel_url: stripeSession.cancel_url,\n  created_at: creationContext.created_at,\n  expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),\n  request_id: creationContext.request_id,\n  phoenix_ecosystem: {\n    version: '2.0.0',\n    checkout_version: '2.0.0',\n    credentials_version: true,\n    source: creationContext.source\n  },\n  analytics: {\n    event_type: 'checkout_session_created',\n    plan_type: creationContext.plan_type,\n    user_email: creationContext.user_email,\n    conversion_context: creationContext.conversion_context\n  }\n};\n\nreturn { json: successResponse };"
+      },
+      "id": "checkout-success-processor",
+      "name": "✅ Checkout Success Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ❌ CHECKOUT ERROR PROCESSOR v2\nconst creationContext = $('🛒 Checkout Session Builder').first().json;\nconst stripeError = $('💳 Create Stripe Session').first().json;\n\nlet errorCode = 'unknown_error';\nlet errorMessage = 'Erreur inconnue lors de la création du checkout';\nlet userMessage = 'Une erreur est survenue. Veuillez réessayer ou contacter le support.';\n\nif (stripeError.error) {\n  errorCode = stripeError.error.code || 'stripe_error';\n  errorMessage = stripeError.error.message || errorMessage;\n  \n  switch (stripeError.error.type) {\n    case 'invalid_request_error':\n      userMessage = 'Configuration de paiement invalide. Veuillez contacter le support.';\n      break;\n    case 'api_error':\n      userMessage = 'Service de paiement temporairement indisponible. Veuillez réessayer dans quelques minutes.';\n      break;\n    case 'card_error':\n      userMessage = 'Problème avec votre carte. Veuillez vérifier vos informations.';\n      break;\n    default:\n      userMessage = 'Erreur de paiement. Veuillez réessayer ou contacter le support.';\n  }\n}\n\nconst errorResponse = {\n  success: false,\n  checkout_created: false,\n  error_code: errorCode,\n  error_message: errorMessage,\n  user_message: userMessage,\n  plan_type: creationContext.plan_type,\n  customer_email: creationContext.user_email,\n  request_id: creationContext.request_id,\n  failed_at: new Date().toISOString(),\n  recommended_actions: [\n    'Vérifier la configuration Stripe',\n    'Réessayer la création',\n    'Contacter le support si le problème persiste'\n  ],\n  support: {\n    email: 'support@phoenix-ecosystem.com',\n    error_id: creationContext.request_id\n  },\n  phoenix_ecosystem: {\n    version: '2.0.0',\n    checkout_version: '2.0.0',\n    credentials_version: true,\n    error_tracking: true\n  },\n  stripe_error_details: stripeError\n};\n\nreturn { json: errorResponse };"
+      },
+      "id": "checkout-error-processor",
+      "name": "❌ Checkout Error Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 500]
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "operation": "insert",
+        "tableId": "checkout_sessions",
+        "dataMode": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "request_id",
+              "fieldValue": "={{ $('🛒 Checkout Session Builder').item.json.request_id }}"
+            },
+            {
+              "fieldId": "user_email",
+              "fieldValue": "={{ $('🛒 Checkout Session Builder').item.json.user_email }}"
+            },
+            {
+              "fieldId": "plan_type",
+              "fieldValue": "={{ $('🛒 Checkout Session Builder').item.json.plan_type }}"
+            },
+            {
+              "fieldId": "stripe_session_id",
+              "fieldValue": "={{ $input.first().json.session_id || null }}"
+            },
+            {
+              "fieldId": "checkout_url",
+              "fieldValue": "={{ $input.first().json.checkout_url || null }}"
+            },
+            {
+              "fieldId": "success",
+              "fieldValue": "={{ $input.first().json.success }}"
+            },
+            {
+              "fieldId": "error_code",
+              "fieldValue": "={{ $input.first().json.error_code || null }}"
+            },
+            {
+              "fieldId": "created_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            },
+            {
+              "fieldId": "conversion_context",
+              "fieldValue": "={{ JSON.stringify($('🛒 Checkout Session Builder').item.json.conversion_context) }}"
+            },
+            {
+              "fieldId": "source",
+              "fieldValue": "={{ $('🛒 Checkout Session Builder').item.json.source }}"
+            }
+          ]
+        }
+      },
+      "id": "log-checkout-session",
+      "name": "📊 Log Checkout Session",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1340, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-phoenix",
+          "name": "Supabase Phoenix"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($input.first().json) }}",
+        "options": {
+          "responseHeaders": {
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "X-Phoenix-Checkout-V2",
+                "value": "{{ $input.first().json.success ? 'created' : 'failed' }}"
+              }
+            ]
+          },
+          "responseCode": "{{ $input.first().json.success ? 200 : 400 }}"
+        }
+      },
+      "id": "checkout-final-response",
+      "name": "🛒 Checkout Final Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 400]
+    }
+  ],
+  "connections": {
+    "💳 Checkout Request Entry": {
+      "main": [
+        [
+          {
+            "node": "🛒 Checkout Session Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🛒 Checkout Session Builder": {
+      "main": [
+        [
+          {
+            "node": "💳 Create Stripe Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💳 Create Stripe Session": {
+      "main": [
+        [
+          {
+            "node": "✅ Check Creation Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✅ Check Creation Success": {
+      "main": [
+        [
+          {
+            "node": "✅ Checkout Success Processor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "❌ Checkout Error Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✅ Checkout Success Processor": {
+      "main": [
+        [
+          {
+            "node": "📊 Log Checkout Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❌ Checkout Error Processor": {
+      "main": [
+        [
+          {
+            "node": "📊 Log Checkout Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Log Checkout Session": {
+      "main": [
+        [
+          {
+            "node": "🛒 Checkout Final Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "Europe/Paris",
+    "executionOrder": "v1"
+  },
+  "versionId": "phoenix-checkout-creator-v2",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "phoenix-stripe-checkout",
+  "tags": [
+    {
+      "createdAt": "2025-01-14T00:00:00.000Z",
+      "updatedAt": "2025-01-14T00:00:00.000Z",
+      "id": "phoenix-stripe-checkout",
+      "name": "Phoenix Stripe"
+    }
+  ]
+}

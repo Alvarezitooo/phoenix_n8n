@@ -1,0 +1,201 @@
+{
+  "name": "Phoenix User Signup",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "phoenix-signup",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-signup",
+      "name": "Webhook Signup",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "phoenix-signup"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Node 1: Validation des données d'entrée\nconst inputData = $input.first().json;\n\n// Validation email\nconst emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nif (!inputData.email || !emailRegex.test(inputData.email)) {\n  throw new Error('Email invalide');\n}\n\n// Validation mot de passe\nif (!inputData.password || inputData.password.length < 8) {\n  throw new Error('Le mot de passe doit contenir au moins 8 caractères');\n}\n\n// Formatage des données pour Supabase\nconst cleanData = {\n  email: inputData.email.toLowerCase().trim(),\n  password: inputData.password,\n  metadata: {\n    fullName: inputData.metadata?.fullName || '',\n    sourceApp: inputData.metadata?.sourceApp || 'website',\n    utmSource: inputData.metadata?.utmSource || 'direct',\n    newsletter: inputData.metadata?.newsletter || false\n  },\n  timestamp: inputData.timestamp || new Date().toISOString()\n};\n\nreturn { json: cleanData };"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/auth/v1/signup",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_ANON_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"email\": \"{{ $json.email }}\",\n  \"password\": \"{{ $json.password }}\",\n  \"data\": {\n    \"full_name\": \"{{ $json.metadata.fullName }}\",\n    \"source_app\": \"{{ $json.metadata.sourceApp }}\",\n    \"utm_source\": \"{{ $json.metadata.utmSource }}\",\n    \"newsletter_opt_in\": {{ $json.metadata.newsletter }}\n  }\n}",
+        "options": {}
+      },
+      "id": "supabase-signup",
+      "name": "Supabase Signup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Node 3: Enregistrer l'événement dans la table events\nconst supabaseResponse = $input.first().json;\nconst originalData = $('Validate Input').first().json;\n\n// Préparer l'événement pour la table events\nconst eventData = {\n  event_type: 'user_signup',\n  payload: {\n    user_id: supabaseResponse.user?.id,\n    email: originalData.email,\n    source_app: originalData.metadata.sourceApp,\n    utm_source: originalData.metadata.utmSource,\n    newsletter_signup: originalData.metadata.newsletter,\n    signup_method: 'email_password',\n    user_agent: $input.first().headers?.['user-agent'] || 'n8n-webhook'\n  },\n  timestamp: new Date().toISOString(),\n  user_id: supabaseResponse.user?.id\n};\n\nreturn { json: eventData };"
+      },
+      "id": "prepare-event",
+      "name": "Prepare Event",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/events",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"event_type\": \"{{ $json.event_type }}\",\n  \"payload\": {{ JSON.stringify($json.payload) }},\n  \"timestamp\": \"{{ $json.timestamp }}\",\n  \"user_id\": \"{{ $json.user_id }}\"\n}",
+        "options": {}
+      },
+      "id": "log-event",
+      "name": "Log Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Node 5: Formatage de la réponse finale\nconst supabaseResponse = $('Supabase Signup').first().json;\nconst eventLogged = $('Log Event').first().json;\n\nif (supabaseResponse.user) {\n  // Succès\n  return {\n    json: {\n      success: true,\n      user: {\n        id: supabaseResponse.user.id,\n        email: supabaseResponse.user.email,\n        fullName: supabaseResponse.user.user_metadata?.full_name,\n        subscriptionTier: 'free',\n        apps: {\n          letters: false,\n          cv: false,\n          rise: false,\n          aube: false\n        },\n        preferences: {\n          newsletter: supabaseResponse.user.user_metadata?.newsletter_opt_in || false,\n          analytics: true,\n          marketing: false\n        },\n        createdAt: supabaseResponse.user.created_at,\n        lastLoginAt: supabaseResponse.user.created_at\n      },\n      message: 'Inscription réussie ! Vérifiez votre email pour confirmer votre compte.',\n      eventId: eventLogged?.id\n    }\n  };\n} else {\n  // Échec\n  return {\n    json: {\n      success: false,\n      error: supabaseResponse.error?.message || 'Erreur lors de l\\'inscription',\n      code: supabaseResponse.error?.code || 'signup_error'\n    }\n  };\n}"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Signup": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Supabase Signup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Signup": {
+      "main": [
+        [
+          {
+            "node": "Prepare Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Event": {
+      "main": [
+        [
+          {
+            "node": "Log Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Event": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1.0.0",
+  "meta": {
+    "instanceId": "phoenix-n8n"
+  }
+}

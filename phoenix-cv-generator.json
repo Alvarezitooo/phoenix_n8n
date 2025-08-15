@@ -1,0 +1,351 @@
+{
+  "name": "📄 Phoenix CV Generator - N8N Direct",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "phoenix-generate-cv",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-cv-request",
+      "name": "📥 CV Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "phoenix-generate-cv"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 📄 PHOENIX CV GENERATOR - Version N8N Pure\n// Génération CV IA optimisé pour reconversions professionnelles\n\nconst inputData = $input.first().json;\nconst startTime = Date.now();\n\n// ✅ VALIDATION SÉCURISÉE\nif (!inputData.user_email || !inputData.personal_info) {\n  throw new Error('Données manquantes: user_email et personal_info requis');\n}\n\nif (!inputData.personal_info.first_name || !inputData.personal_info.last_name) {\n  throw new Error('Nom et prénom requis dans personal_info');\n}\n\nif (!inputData.personal_info.email) {\n  throw new Error('Email requis dans personal_info');\n}\n\n// 🎯 CONFIGURATION PHOENIX CV\nconst config = {\n  user_email: inputData.user_email,\n  user_tier: inputData.user_tier || 'free',\n  template_id: inputData.template_id || 'modern',\n  ats_optimization: inputData.ats_optimization || false,\n  target_job: inputData.target_job || '',\n  session_id: `phoenix_cv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`\n};\n\n// 📊 STRUCTURATION DONNÉES CV\nconst cvProfile = {\n  personal_info: {\n    first_name: inputData.personal_info.first_name,\n    last_name: inputData.personal_info.last_name,\n    email: inputData.personal_info.email,\n    phone: inputData.personal_info.phone || '',\n    city: inputData.personal_info.city || '',\n    linkedin_url: inputData.personal_info.linkedin_url || ''\n  },\n  professional_summary: inputData.professional_summary || '',\n  experiences: inputData.experiences || [],\n  education: inputData.education || [],\n  skills: inputData.skills || [],\n  languages: inputData.languages || [],\n  projects: inputData.projects || []\n};\n\n// 🎨 GÉNÉRATION RÉSUMÉ PROFESSIONNEL IA\nlet summaryPrompt = '';\nif (!cvProfile.professional_summary && config.user_tier === 'premium') {\n  summaryPrompt = buildProfessionalSummaryPrompt(cvProfile, config.target_job);\n}\n\n// 🔍 ANALYSE ATS SI PREMIUM\nlet atsPrompt = '';\nif (config.ats_optimization && config.user_tier === 'premium' && inputData.job_description) {\n  atsPrompt = buildATSOptimizationPrompt(cvProfile, inputData.job_description);\n}\n\n// 📋 PRÉPARATION DONNÉES COMPLÈTES\nconst processingData = {\n  config: config,\n  cv_profile: cvProfile,\n  summary_prompt: summaryPrompt,\n  ats_prompt: atsPrompt,\n  job_description: inputData.job_description || '',\n  metadata: {\n    generation_start: startTime,\n    phoenix_version: '2.0.0',\n    template_requested: config.template_id,\n    features_requested: {\n      ats_optimization: config.ats_optimization,\n      ai_summary: !!summaryPrompt,\n      premium_features: config.user_tier === 'premium'\n    }\n  }\n};\n\nreturn { json: processingData };\n\n// 🛠️ FONCTIONS UTILITAIRES\n\nfunction buildProfessionalSummaryPrompt(profile, targetJob) {\n  const experiences = profile.experiences.slice(0, 3).map(exp => \n    `${exp.position} chez ${exp.company}`\n  ).join(', ');\n  \n  const skills = profile.skills.slice(0, 8).map(skill => skill.name || skill).join(', ');\n  \n  return `Créez un résumé professionnel percutant pour ce profil en reconversion :\n\nExpériences : ${experiences}\nCompétences : ${skills}\nPoste visé : ${targetJob || 'Évolution de carrière'}\n\nConsignes :\n- 3-4 lignes maximum\n- Valoriser les compétences transférables\n- Montrer la motivation pour la reconversion\n- Ton professionnel et confiant\n\nRésumé professionnel :`;\n}\n\nfunction buildATSOptimizationPrompt(profile, jobDescription) {\n  return `Analysez cette offre d'emploi et suggérez des optimisations ATS pour ce CV :\n\nOffre d'emploi :\n${jobDescription.substring(0, 1000)}\n\nProfil candidat :\n- Expériences : ${profile.experiences.length} postes\n- Compétences : ${profile.skills.map(s => s.name || s).join(', ')}\n\nFournissez :\n1. Score ATS estimé (/100)\n2. 5 mots-clés manquants à ajouter\n3. 3 recommandations d'amélioration\n\nFormat JSON uniquement.`;\n}"
+      },
+      "id": "phoenix-cv-builder",
+      "name": "🎯 Phoenix CV Builder",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "1",
+              "leftValue": "={{ $json.summary_prompt }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "need-ai-summary",
+      "name": "🤖 Need AI Summary?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $env.GEMINI_API_KEY }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": \"{{ $json.summary_prompt }}\"\n    }]\n  }],\n  \"generationConfig\": {\n    \"maxOutputTokens\": 300,\n    \"temperature\": 0.6\n  }\n}",
+        "options": {}
+      },
+      "id": "generate-summary",
+      "name": "✍️ Generate AI Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "1",
+              "leftValue": "={{ $json.ats_prompt }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "need-ats-analysis",
+      "name": "📊 Need ATS Analysis?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $env.GEMINI_API_KEY }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": \"{{ $json.ats_prompt }}\"\n    }]\n  }],\n  \"generationConfig\": {\n    \"maxOutputTokens\": 500,\n    \"temperature\": 0.3\n  }\n}",
+        "options": {}
+      },
+      "id": "generate-ats-analysis",
+      "name": "🎯 Generate ATS Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 📄 PHOENIX CV - Assemblage Final & Template\n\nconst builderData = $('Phoenix CV Builder').first().json;\nconst generationTime = Date.now() - builderData.metadata.generation_start;\n\n// 🔍 RÉCUPÉRATION DES DONNÉES IA\nlet aiSummary = '';\nlet atsAnalysis = null;\n\n// Récupération du résumé IA si généré\ntry {\n  const summaryNode = $('Generate AI Summary');\n  if (summaryNode && summaryNode.length > 0) {\n    const summaryResponse = summaryNode.first().json;\n    aiSummary = summaryResponse.candidates[0]?.content?.parts[0]?.text || '';\n    aiSummary = aiSummary.replace(/\\*\\*([^*]+)\\*\\*/g, '$1').trim();\n  }\n} catch (e) {\n  // Pas de résumé IA généré\n}\n\n// Récupération de l'analyse ATS si générée\ntry {\n  const atsNode = $('Generate ATS Analysis');\n  if (atsNode && atsNode.length > 0) {\n    const atsResponse = atsNode.first().json;\n    const atsText = atsResponse.candidates[0]?.content?.parts[0]?.text || '';\n    try {\n      atsAnalysis = JSON.parse(atsText);\n    } catch (e) {\n      // Parsing JSON échoué, analyse basique\n      atsAnalysis = {\n        score: 75,\n        missing_keywords: [],\n        recommendations: ['Optimisation ATS non disponible']\n      };\n    }\n  }\n} catch (e) {\n  // Pas d'analyse ATS\n}\n\n// 🎨 CONSTRUCTION CV FINAL\nconst finalCVProfile = {\n  ...builderData.cv_profile,\n  professional_summary: aiSummary || builderData.cv_profile.professional_summary || generateDefaultSummary(builderData.cv_profile)\n};\n\n// 📊 CALCUL SCORE GLOBAL\nconst qualityScore = calculateCVQuality(finalCVProfile, builderData.config);\nconst atsScore = atsAnalysis?.score || qualityScore;\n\n// 🎨 GÉNÉRATION HTML (Template Engine)\nconst cvHTML = generateCVHTML(finalCVProfile, builderData.config.template_id);\n\n// 🌱 CALCUL IMPACT ENVIRONNEMENTAL\nconst co2Impact = calculateCO2Impact(builderData.config.user_tier, generationTime, !!aiSummary, !!atsAnalysis);\n\n// 💡 RECOMMANDATIONS PREMIUM\nconst recommendations = generateRecommendations(finalCVProfile, atsAnalysis, builderData.config);\n\n// 📄 RÉSULTAT FINAL PHOENIX CV\nconst phoenixCVResult = {\n  success: true,\n  cv_id: `phoenix_cv_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`,\n  cv_html: cvHTML,\n  cv_profile: finalCVProfile,\n  user_email: builderData.config.user_email,\n  user_tier: builderData.config.user_tier,\n  template_id: builderData.config.template_id,\n  generation_time_ms: generationTime,\n  generation_time_s: Math.round(generationTime / 1000 * 100) / 100,\n  quality_score: qualityScore,\n  ats_score: atsScore,\n  co2_impact_grams: co2Impact,\n  recommendations: recommendations,\n  premium_features_used: getPremiumFeaturesUsed(!!aiSummary, !!atsAnalysis),\n  metadata: {\n    template_used: builderData.config.template_id,\n    ai_summary_generated: !!aiSummary,\n    ats_analysis_performed: !!atsAnalysis,\n    sections_count: countCVSections(finalCVProfile),\n    total_experience_years: calculateTotalExperience(finalCVProfile.experiences),\n    session_id: builderData.config.session_id,\n    phoenix_version: '2.0.0',\n    timestamp: new Date().toISOString()\n  }\n};\n\nreturn { json: phoenixCVResult };\n\n// 🛠️ FONCTIONS UTILITAIRES\n\nfunction generateDefaultSummary(profile) {\n  const firstName = profile.personal_info.first_name;\n  const experienceCount = profile.experiences.length;\n  const skillsCount = profile.skills.length;\n  \n  return `${firstName}, professionnel(le) expérimenté(e) avec ${experienceCount} expériences diversifiées et ${skillsCount} compétences clés. En transition professionnelle, je mets à profit mon parcours atypique pour apporter une perspective unique et des compétences transférables solides.`;\n}\n\nfunction calculateCVQuality(profile, config) {\n  let score = 0;\n  \n  // Sections complètes (40 points)\n  if (profile.personal_info.first_name && profile.personal_info.last_name) score += 10;\n  if (profile.professional_summary && profile.professional_summary.length > 50) score += 15;\n  if (profile.experiences.length > 0) score += 10;\n  if (profile.skills.length >= 5) score += 5;\n  \n  // Détail des expériences (30 points)\n  profile.experiences.forEach(exp => {\n    if (exp.description && exp.description.length > 50) score += 5;\n  });\n  score = Math.min(score, 70); // Max 70 pour cette section\n  \n  // Contact info (15 points)\n  if (profile.personal_info.email) score += 7;\n  if (profile.personal_info.phone) score += 4;\n  if (profile.personal_info.city) score += 4;\n  \n  // Bonus premium (15 points)\n  if (config.user_tier === 'premium') score += 15;\n  \n  return Math.min(100, score);\n}\n\nfunction generateCVHTML(profile, templateId) {\n  const templates = {\n    'modern': generateModernTemplate(profile),\n    'ats_optimized': generateATSTemplate(profile),\n    'creative': generateCreativeTemplate(profile)\n  };\n  \n  return templates[templateId] || templates.modern;\n}\n\nfunction generateModernTemplate(profile) {\n  const experiencesHTML = profile.experiences.map(exp => `\n    <div class=\"experience-item\">\n      <h3>${exp.position}</h3>\n      <p class=\"company\">${exp.company} • ${exp.start_date} - ${exp.end_date || 'Présent'}</p>\n      <p class=\"description\">${exp.description || ''}</p>\n    </div>\n  `).join('');\n  \n  const skillsHTML = profile.skills.map(skill => `\n    <span class=\"skill-tag\">${skill.name || skill}</span>\n  `).join('');\n  \n  return `<!DOCTYPE html>\n<html>\n<head>\n    <title>CV - ${profile.personal_info.first_name} ${profile.personal_info.last_name}</title>\n    <meta charset=\"UTF-8\">\n    <style>\n        body { font-family: 'Arial', sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }\n        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 15px; text-align: center; margin-bottom: 30px; }\n        .header h1 { margin: 0; font-size: 2.5em; }\n        .header p { margin: 5px 0; opacity: 0.9; }\n        .section { margin-bottom: 25px; }\n        .section h2 { color: #667eea; border-bottom: 2px solid #667eea; padding-bottom: 5px; }\n        .experience-item { margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 10px; }\n        .experience-item h3 { margin: 0 0 5px 0; color: #333; }\n        .company { color: #666; font-weight: bold; margin: 0 0 10px 0; }\n        .description { margin: 0; }\n        .skill-tag { display: inline-block; background: linear-gradient(45deg, #ff7a00, #ff0040); color: white; padding: 5px 12px; margin: 3px; border-radius: 15px; font-size: 0.9em; }\n        .contact-info { background: #e9ecef; padding: 15px; border-radius: 10px; }\n        .summary { background: linear-gradient(45deg, #f8f9fa, #ffffff); padding: 20px; border-radius: 10px; border-left: 4px solid #667eea; }\n    </style>\n</head>\n<body>\n    <div class=\"header\">\n        <h1>${profile.personal_info.first_name} ${profile.personal_info.last_name}</h1>\n        <p>📧 ${profile.personal_info.email}</p>\n        ${profile.personal_info.phone ? `<p>📱 ${profile.personal_info.phone}</p>` : ''}\n        ${profile.personal_info.city ? `<p>📍 ${profile.personal_info.city}</p>` : ''}\n        ${profile.personal_info.linkedin_url ? `<p>💼 <a href=\"${profile.personal_info.linkedin_url}\" style=\"color: white;\">LinkedIn</a></p>` : ''}\n    </div>\n    \n    ${profile.professional_summary ? `\n    <div class=\"section\">\n        <h2>🎯 Résumé Professionnel</h2>\n        <div class=\"summary\">\n            <p>${profile.professional_summary}</p>\n        </div>\n    </div>\n    ` : ''}\n    \n    ${profile.experiences.length > 0 ? `\n    <div class=\"section\">\n        <h2>💼 Expérience Professionnelle</h2>\n        ${experiencesHTML}\n    </div>\n    ` : ''}\n    \n    ${profile.skills.length > 0 ? `\n    <div class=\"section\">\n        <h2>🎯 Compétences</h2>\n        <div class=\"skills\">\n            ${skillsHTML}\n        </div>\n    </div>\n    ` : ''}\n    \n    <div class=\"footer\" style=\"text-align: center; margin-top: 40px; padding: 20px; background: #f8f9fa; border-radius: 10px; color: #666;\">\n        <p>🔥 <strong>CV généré par Phoenix</strong> • Spécialisé reconversions professionnelles</p>\n        <p style=\"font-size: 0.9em;\">phoenix-ecosystem.com</p>\n    </div>\n</body>\n</html>`;\n}\n\nfunction generateATSTemplate(profile) {\n  // Template ATS-optimized simplifié\n  return generateModernTemplate(profile).replace(\n    /<style>[\\s\\S]*?<\\/style>/,\n    '<style>body { font-family: Arial, sans-serif; line-height: 1.5; color: #000; } h1,h2,h3 { color: #000; } .skill-tag { display: inline; background: none; color: #000; padding: 0; margin-right: 10px; }</style>'\n  );\n}\n\nfunction generateCreativeTemplate(profile) {\n  // Template créatif avec plus de couleurs\n  return generateModernTemplate(profile).replace(\n    'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',\n    'linear-gradient(135deg, #ff7a00 0%, #ff0040 100%)'\n  );\n}\n\nfunction calculateCO2Impact(userTier, generationTime, hasAISummary, hasATSAnalysis) {\n  let baseImpact = 0.5; // Base CV generation\n  if (hasAISummary) baseImpact += 0.3;\n  if (hasATSAnalysis) baseImpact += 0.4;\n  \n  const timeMultiplier = generationTime / 1000 / 2; // Par tranche de 2 secondes\n  const tierMultiplier = userTier === 'premium' ? 0.9 : 1.0;\n  \n  return Math.round((baseImpact * timeMultiplier * tierMultiplier) * 100) / 100;\n}\n\nfunction generateRecommendations(profile, atsAnalysis, config) {\n  const recommendations = [];\n  \n  if (!profile.professional_summary) {\n    recommendations.push('💡 Ajoutez un résumé professionnel accrocheur');\n  }\n  \n  if (profile.experiences.some(exp => !exp.description || exp.description.length < 50)) {\n    recommendations.push('📝 Enrichissez vos descriptions d\\'expérience');\n  }\n  \n  if (profile.skills.length < 8) {\n    recommendations.push('🎯 Ajoutez plus de compétences pour vous démarquer');\n  }\n  \n  if (atsAnalysis && atsAnalysis.recommendations) {\n    recommendations.push(...atsAnalysis.recommendations.slice(0, 2));\n  }\n  \n  return recommendations.slice(0, 5);\n}\n\nfunction getPremiumFeaturesUsed(hasAISummary, hasATSAnalysis) {\n  const features = [];\n  if (hasAISummary) features.push('AI Professional Summary');\n  if (hasATSAnalysis) features.push('ATS Analysis & Optimization');\n  return features;\n}\n\nfunction countCVSections(profile) {\n  let count = 1; // Personal info always present\n  if (profile.professional_summary) count++;\n  if (profile.experiences.length > 0) count++;\n  if (profile.education.length > 0) count++;\n  if (profile.skills.length > 0) count++;\n  if (profile.languages.length > 0) count++;\n  if (profile.projects.length > 0) count++;\n  return count;\n}\n\nfunction calculateTotalExperience(experiences) {\n  // Calcul approximatif basé sur les dates\n  return experiences.length * 2; // 2 ans en moyenne par expérience\n}"
+      },
+      "id": "phoenix-cv-assembler",
+      "name": "🔧 Phoenix CV Assembler", 
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/events",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"event_type\": \"cv_generated\",\n  \"user_id\": \"{{ $json.user_email }}\",\n  \"payload\": {\n    \"cv_id\": \"{{ $json.cv_id }}\",\n    \"user_tier\": \"{{ $json.user_tier }}\",\n    \"template_id\": \"{{ $json.template_id }}\",\n    \"generation_time_s\": {{ $json.generation_time_s }},\n    \"quality_score\": {{ $json.quality_score }},\n    \"ats_score\": {{ $json.ats_score }},\n    \"co2_impact_grams\": {{ $json.co2_impact_grams }},\n    \"sections_count\": {{ $json.metadata.sections_count }},\n    \"premium_features_used\": {{ JSON.stringify($json.premium_features_used) }},\n    \"ai_summary_generated\": {{ $json.metadata.ai_summary_generated }},\n    \"ats_analysis_performed\": {{ $json.metadata.ats_analysis_performed }},\n    \"session_id\": \"{{ $json.metadata.session_id }}\",\n    \"phoenix_version\": \"{{ $json.metadata.phoenix_version }}\"\n  },\n  \"timestamp\": \"{{ $json.metadata.timestamp }}\",\n  \"source\": \"phoenix_cv_n8n\"\n}",
+        "options": {}
+      },
+      "id": "cv-event-sourcing",
+      "name": "📊 CV Event Sourcing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SENDGRID_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "url": "https://api.sendgrid.com/v3/mail/send",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"personalizations\": [{\n    \"to\": [{\n      \"email\": \"{{ $('Phoenix CV Assembler').first().json.user_email }}\",\n      \"name\": \"{{ $('Phoenix CV Assembler').first().json.cv_profile.personal_info.first_name }} {{ $('Phoenix CV Assembler').first().json.cv_profile.personal_info.last_name }}\"\n    }],\n    \"subject\": \"📄 Votre CV Phoenix est prêt ! (ATS: {{ $('Phoenix CV Assembler').first().json.ats_score }}/100)\"\n  }],\n  \"from\": {\n    \"email\": \"cv@phoenix-ecosystem.com\",\n    \"name\": \"Phoenix CV\"\n  },\n  \"content\": [{\n    \"type\": \"text/html\",\n    \"value\": \"<div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'><div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0;'><h1 style='margin: 0;'>📄 Phoenix CV</h1><p style='margin: 10px 0 0 0;'>Votre CV professionnel est prêt !</p></div><div style='padding: 20px; background: #f8f9fa; border-radius: 0 0 10px 10px;'><h2>📊 Résumé de génération</h2><ul><li><strong>Score ATS:</strong> {{ $('Phoenix CV Assembler').first().json.ats_score }}/100</li><li><strong>Score qualité:</strong> {{ $('Phoenix CV Assembler').first().json.quality_score }}/100</li><li><strong>Template:</strong> {{ $('Phoenix CV Assembler').first().json.template_id }}</li><li><strong>Sections:</strong> {{ $('Phoenix CV Assembler').first().json.metadata.sections_count }}</li><li><strong>Impact CO2:</strong> {{ $('Phoenix CV Assembler').first().json.co2_impact_grams }}g</li></ul>{{ $('Phoenix CV Assembler').first().json.premium_features_used.length > 0 ? '<p><strong>🌟 Fonctionnalités Premium utilisées:</strong><br>' + $('Phoenix CV Assembler').first().json.premium_features_used.join(', ') + '</p>' : '' }}<a href='{{ $env.PHOENIX_CV_URL }}' style='display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 10px 0;'>Voir mon CV</a></div></div>\"\n  }]\n}",
+        "options": {}
+      },
+      "id": "cv-email-notification",
+      "name": "📧 CV Email Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": {{ $('Phoenix CV Assembler').first().json.success }},\n  \"message\": \"📄 Phoenix CV généré avec succès !\",\n  \"data\": {\n    \"cv_id\": \"{{ $('Phoenix CV Assembler').first().json.cv_id }}\",\n    \"quality_score\": {{ $('Phoenix CV Assembler').first().json.quality_score }},\n    \"ats_score\": {{ $('Phoenix CV Assembler').first().json.ats_score }},\n    \"generation_time_s\": {{ $('Phoenix CV Assembler').first().json.generation_time_s }},\n    \"co2_impact_grams\": {{ $('Phoenix CV Assembler').first().json.co2_impact_grams }},\n    \"template_used\": \"{{ $('Phoenix CV Assembler').first().json.template_id }}\",\n    \"sections_count\": {{ $('Phoenix CV Assembler').first().json.metadata.sections_count }},\n    \"premium_features_used\": {{ JSON.stringify($('Phoenix CV Assembler').first().json.premium_features_used) }},\n    \"recommendations_count\": {{ $('Phoenix CV Assembler').first().json.recommendations.length }}\n  },\n  \"phoenix_version\": \"2.0.0\",\n  \"timestamp\": \"{{ $('Phoenix CV Assembler').first().json.metadata.timestamp }}\"\n}",
+        "options": {}
+      },
+      "id": "cv-final-response",
+      "name": "✅ CV Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1780, 300]
+    }
+  ],
+  "connections": {
+    "📥 CV Request": {
+      "main": [
+        [
+          {
+            "node": "🎯 Phoenix CV Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🎯 Phoenix CV Builder": {
+      "main": [
+        [
+          {
+            "node": "🤖 Need AI Summary?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "📊 Need ATS Analysis?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🤖 Need AI Summary?": {
+      "main": [
+        [
+          {
+            "node": "✍️ Generate AI Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✍️ Generate AI Summary": {
+      "main": [
+        [
+          {
+            "node": "🔧 Phoenix CV Assembler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Need ATS Analysis?": {
+      "main": [
+        [
+          {
+            "node": "🎯 Generate ATS Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🎯 Generate ATS Analysis": {
+      "main": [
+        [
+          {
+            "node": "🔧 Phoenix CV Assembler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔧 Phoenix CV Assembler": {
+      "main": [
+        [
+          {
+            "node": "📊 CV Event Sourcing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 CV Event Sourcing": {
+      "main": [
+        [
+          {
+            "node": "📧 CV Email Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📧 CV Email Success": {
+      "main": [
+        [
+          {
+            "node": "✅ CV Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "Europe/Paris"
+  },
+  "versionId": "2.0.0",
+  "meta": {
+    "instanceId": "phoenix-cv-n8n-direct"
+  }
+}

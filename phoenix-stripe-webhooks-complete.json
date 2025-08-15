@@ -1,0 +1,412 @@
+{
+  "name": "💳 Phoenix Stripe Webhooks - Gestionnaire Complet",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "stripe-webhooks",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "stripe-webhook-entry",
+      "name": "📥 Stripe Webhook Entry",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "webhookId": "stripe-webhooks"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 💳 PHOENIX STRIPE WEBHOOKS - ROUTER COMPLET avec credentials\nconst stripeEvent = $input.first().json;\nconst timestamp = new Date().toISOString();\n\n// 🔐 RÉCUPÉRATION DES CREDENTIALS\nconst config = this.getCredentials('phoenix-config');\n\n// Validation événement Stripe\nif (!stripeEvent.type || !stripeEvent.data || !stripeEvent.data.object) {\n  throw new Error('Événement Stripe invalide');\n}\n\nconst eventType = stripeEvent.type;\nconst eventObject = stripeEvent.data.object;\nconst eventId = stripeEvent.id;\n\n// 🎯 CLASSIFICATION DES ÉVÉNEMENTS STRIPE\nconst eventCategories = {\n  'checkout.session.completed': 'payment_success',\n  'checkout.session.expired': 'payment_expired',\n  'customer.subscription.created': 'subscription_created',\n  'customer.subscription.updated': 'subscription_updated',\n  'customer.subscription.deleted': 'subscription_canceled',\n  'customer.subscription.trial_will_end': 'trial_ending',\n  'invoice.payment_succeeded': 'payment_succeeded',\n  'invoice.payment_failed': 'payment_failed',\n  'invoice.upcoming': 'invoice_upcoming',\n  'invoice.finalized': 'invoice_finalized',\n  'customer.created': 'customer_created',\n  'customer.updated': 'customer_updated',\n  'customer.deleted': 'customer_deleted',\n  'payment_method.attached': 'payment_method_added',\n  'payment_method.detached': 'payment_method_removed',\n  'charge.dispute.created': 'dispute_created',\n  'charge.refunded': 'refund_processed'\n};\n\nconst eventCategory = eventCategories[eventType] || 'unknown_event';\n\n// 🚦 ROUTAGE INTELLIGENT\nlet routeDecision = {\n  event_id: eventId,\n  event_type: eventType,\n  event_category: eventCategory,\n  timestamp: timestamp,\n  route_to: '',\n  priority: 'normal',\n  requires_user_update: false,\n  requires_notification: false,\n  stripe_data: eventObject,\n  config: {\n    website_url: config.website_url,\n    premium_monthly: config.premium_monthly,\n    premium_yearly: config.premium_yearly,\n    enterprise: config.enterprise\n  }\n};\n\n// Extraction données utilisateur selon le type d'événement\nlet userEmail = '';\nlet customerId = '';\nlet subscriptionId = '';\nlet amountCents = 0;\n\nswitch (eventType) {\n  case 'checkout.session.completed':\n    userEmail = eventObject.customer_details?.email || eventObject.customer_email;\n    customerId = eventObject.customer;\n    subscriptionId = eventObject.subscription;\n    amountCents = eventObject.amount_total;\n    routeDecision.route_to = 'payment_success_handler';\n    routeDecision.priority = 'high';\n    routeDecision.requires_user_update = true;\n    routeDecision.requires_notification = true;\n    break;\n    \n  case 'checkout.session.expired':\n    userEmail = eventObject.customer_details?.email;\n    routeDecision.route_to = 'payment_expired_handler';\n    routeDecision.requires_notification = true;\n    break;\n    \n  case 'customer.subscription.created':\n  case 'customer.subscription.updated':\n    customerId = eventObject.customer;\n    subscriptionId = eventObject.id;\n    routeDecision.route_to = 'subscription_change_handler';\n    routeDecision.priority = 'high';\n    routeDecision.requires_user_update = true;\n    break;\n    \n  case 'customer.subscription.deleted':\n    customerId = eventObject.customer;\n    subscriptionId = eventObject.id;\n    routeDecision.route_to = 'subscription_canceled_handler';\n    routeDecision.priority = 'high';\n    routeDecision.requires_user_update = true;\n    routeDecision.requires_notification = true;\n    break;\n    \n  case 'invoice.payment_succeeded':\n    customerId = eventObject.customer;\n    subscriptionId = eventObject.subscription;\n    amountCents = eventObject.amount_paid;\n    routeDecision.route_to = 'payment_succeeded_handler';\n    routeDecision.requires_notification = true;\n    break;\n    \n  case 'invoice.payment_failed':\n    customerId = eventObject.customer;\n    subscriptionId = eventObject.subscription;\n    amountCents = eventObject.amount_due;\n    routeDecision.route_to = 'payment_failed_handler';\n    routeDecision.priority = 'high';\n    routeDecision.requires_notification = true;\n    break;\n    \n  case 'customer.subscription.trial_will_end':\n    customerId = eventObject.customer;\n    subscriptionId = eventObject.id;\n    routeDecision.route_to = 'trial_ending_handler';\n    routeDecision.requires_notification = true;\n    break;\n    \n  default:\n    routeDecision.route_to = 'event_logger';\n    routeDecision.priority = 'low';\n}\n\n// Enrichissement des données\nrouteDecision.user_context = {\n  email: userEmail,\n  customer_id: customerId,\n  subscription_id: subscriptionId,\n  amount_cents: amountCents,\n  currency: eventObject.currency || 'eur'\n};\n\n// Métadonnées Phoenix\nrouteDecision.phoenix_context = {\n  ecosystem_version: '2.0.0',\n  stripe_webhook_version: '2.0.0',\n  processing_node: 'stripe_webhook_router',\n  requires_sso_sync: routeDecision.requires_user_update,\n  credentials_version: true\n};\n\nreturn { json: routeDecision };"
+      },
+      "id": "stripe-webhook-router",
+      "name": "🚦 Stripe Webhook Router",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "route-payment-success",
+              "leftValue": "={{ $json.route_to }}",
+              "rightValue": "payment_success_handler",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "route-payment-success",
+      "name": "✅ Route Payment Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ✅ PAYMENT SUCCESS HANDLER avec credentials\nconst routeData = $('🚦 Stripe Webhook Router').first().json;\nconst stripeData = routeData.stripe_data;\nconst userContext = routeData.user_context;\nconst config = routeData.config;\n\n// Détermination du tier selon le price_id ou amount\nlet newTier = 'premium';\nlet planType = 'monthly';\n\n// Logique de détermination du plan avec credentials\nif (stripeData.amount_total) {\n  const amountEur = stripeData.amount_total / 100;\n  if (amountEur >= 200) {\n    newTier = 'enterprise';\n    planType = 'yearly';\n  } else if (amountEur >= 100) {\n    newTier = 'premium';\n    planType = 'yearly';\n  } else {\n    newTier = 'premium';\n    planType = 'monthly';\n  }\n}\n\n// Vérification avec price_id depuis credentials\nif (stripeData.subscription && stripeData.subscription.items) {\n  const items = stripeData.subscription.items.data || [];\n  for (const item of items) {\n    const priceId = item.price?.id;\n    if (priceId === config.enterprise) {\n      newTier = 'enterprise';\n      planType = 'yearly';\n    } else if (priceId === config.premium_yearly) {\n      newTier = 'premium';\n      planType = 'yearly';\n    } else if (priceId === config.premium_monthly) {\n      newTier = 'premium';\n      planType = 'monthly';\n    }\n  }\n}\n\nconst upgradeData = {\n  user_email: userContext.email,\n  customer_id: userContext.customer_id,\n  subscription_id: userContext.subscription_id,\n  new_tier: newTier,\n  plan_type: planType,\n  amount_paid: userContext.amount_cents / 100,\n  currency: userContext.currency,\n  upgrade_source: 'stripe_checkout',\n  upgrade_timestamp: new Date().toISOString(),\n  stripe_session_id: stripeData.id,\n  unlocked_features: {\n    premium_templates: true,\n    unlimited_generations: newTier === 'enterprise',\n    priority_support: true,\n    advanced_analytics: newTier === 'enterprise',\n    api_access: newTier === 'enterprise'\n  }\n};\n\nreturn { json: upgradeData };"
+      },
+      "id": "payment-success-handler",
+      "name": "✅ Payment Success Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "route-payment-failed",
+              "leftValue": "={{ $json.route_to }}",
+              "rightValue": "payment_failed_handler",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "route-payment-failed",
+      "name": "❌ Route Payment Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ❌ PAYMENT FAILED HANDLER avec credentials\nconst routeData = $('🚦 Stripe Webhook Router').first().json;\nconst stripeData = routeData.stripe_data;\nconst userContext = routeData.user_context;\n\nlet failureReason = 'unknown';\nlet actionRequired = 'contact_user';\nlet severity = 'medium';\n\nif (stripeData.last_payment_error) {\n  const errorCode = stripeData.last_payment_error.code;\n  \n  switch (errorCode) {\n    case 'card_declined':\n      failureReason = 'card_declined';\n      actionRequired = 'update_payment_method';\n      severity = 'high';\n      break;\n    case 'insufficient_funds':\n      failureReason = 'insufficient_funds';\n      actionRequired = 'retry_payment';\n      severity = 'high';\n      break;\n    case 'expired_card':\n      failureReason = 'expired_card';\n      actionRequired = 'update_payment_method';\n      severity = 'high';\n      break;\n    default:\n      failureReason = errorCode || 'generic_decline';\n      actionRequired = 'contact_support';\n  }\n}\n\nconst failureData = {\n  user_email: userContext.email,\n  customer_id: userContext.customer_id,\n  subscription_id: userContext.subscription_id,\n  failure_reason: failureReason,\n  action_required: actionRequired,\n  severity: severity,\n  amount_failed: userContext.amount_cents / 100,\n  currency: userContext.currency,\n  retry_attempts: stripeData.attempt_count || 1,\n  next_retry_date: stripeData.next_payment_attempt,\n  dunning_stage: 'initial_failure',\n  send_failure_email: true,\n  suspend_premium_features: severity === 'high',\n  grace_period_days: severity === 'high' ? 3 : 7,\n  failure_timestamp: new Date().toISOString(),\n  stripe_invoice_id: stripeData.id,\n  error_details: stripeData.last_payment_error\n};\n\nreturn { json: failureData };"
+      },
+      "id": "payment-failed-handler",
+      "name": "❌ Payment Failed Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "route-subscription-change",
+              "leftValue": "={{ $json.route_to }}",
+              "rightValue": "subscription_change_handler",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "route-subscription-change",
+      "name": "🔄 Route Subscription Change?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 🔄 SUBSCRIPTION CHANGE HANDLER avec credentials\nconst routeData = $('🚦 Stripe Webhook Router').first().json;\nconst stripeData = routeData.stripe_data;\nconst userContext = routeData.user_context;\nconst eventType = routeData.event_type;\nconst config = routeData.config;\n\nlet changeType = 'unknown';\nlet newStatus = stripeData.status;\nlet newTier = 'free';\n\nswitch (eventType) {\n  case 'customer.subscription.created':\n    changeType = 'subscription_created';\n    newTier = 'premium';\n    break;\n  case 'customer.subscription.updated':\n    changeType = 'subscription_updated';\n    // Détermination du tier avec credentials\n    if (stripeData.items && stripeData.items.data.length > 0) {\n      const priceId = stripeData.items.data[0].price.id;\n      if (priceId === config.enterprise) {\n        newTier = 'enterprise';\n      } else if (priceId === config.premium_yearly || priceId === config.premium_monthly) {\n        newTier = 'premium';\n      }\n    }\n    break;\n  case 'customer.subscription.deleted':\n    changeType = 'subscription_canceled';\n    newTier = 'free';\n    break;\n}\n\nconst subscriptionChange = {\n  customer_id: userContext.customer_id,\n  subscription_id: userContext.subscription_id,\n  change_type: changeType,\n  old_status: stripeData.previous_attributes?.status || 'unknown',\n  new_status: newStatus,\n  new_tier: newTier,\n  current_period_start: new Date(stripeData.current_period_start * 1000).toISOString(),\n  current_period_end: new Date(stripeData.current_period_end * 1000).toISOString(),\n  trial_end: stripeData.trial_end ? new Date(stripeData.trial_end * 1000).toISOString() : null,\n  cancel_at_period_end: stripeData.cancel_at_period_end || false,\n  canceled_at: stripeData.canceled_at ? new Date(stripeData.canceled_at * 1000).toISOString() : null,\n  change_timestamp: new Date().toISOString(),\n  stripe_subscription_data: stripeData,\n  update_user_permissions: true,\n  send_change_notification: changeType !== 'subscription_updated',\n  sync_across_apps: true\n};\n\nreturn { json: subscriptionChange };"
+      },
+      "id": "subscription-change-handler",
+      "name": "🔄 Subscription Change Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "operation": "update",
+        "tableId": "profiles",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "email",
+              "condition": "equals",
+              "keyValue": "={{ $input.first().json.user_email }}"
+            }
+          ]
+        },
+        "updateFields": {
+          "values": [
+            {
+              "column": "subscription_tier",
+              "value": "={{ $input.first().json.new_tier }}"
+            },
+            {
+              "column": "stripe_customer_id",
+              "value": "={{ $input.first().json.customer_id }}"
+            },
+            {
+              "column": "stripe_subscription_id",
+              "value": "={{ $input.first().json.subscription_id }}"
+            },
+            {
+              "column": "updated_at",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "update-user-profile-stripe",
+      "name": "👤 Update User Profile",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1120, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-phoenix",
+          "name": "Supabase Phoenix"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "operation": "insert",
+        "tableId": "stripe_events",
+        "dataMode": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "stripe_event_id",
+              "fieldValue": "={{ $('🚦 Stripe Webhook Router').item.json.event_id }}"
+            },
+            {
+              "fieldId": "event_type",
+              "fieldValue": "={{ $('🚦 Stripe Webhook Router').item.json.event_type }}"
+            },
+            {
+              "fieldId": "event_category",
+              "fieldValue": "={{ $('🚦 Stripe Webhook Router').item.json.event_category }}"
+            },
+            {
+              "fieldId": "user_email",
+              "fieldValue": "={{ $('🚦 Stripe Webhook Router').item.json.user_context.email }}"
+            },
+            {
+              "fieldId": "customer_id",
+              "fieldValue": "={{ $('🚦 Stripe Webhook Router').item.json.user_context.customer_id }}"
+            },
+            {
+              "fieldId": "amount_cents",
+              "fieldValue": "={{ $('🚦 Stripe Webhook Router').item.json.user_context.amount_cents }}"
+            },
+            {
+              "fieldId": "processed_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            },
+            {
+              "fieldId": "stripe_data",
+              "fieldValue": "={{ JSON.stringify($('🚦 Stripe Webhook Router').item.json.stripe_data) }}"
+            },
+            {
+              "fieldId": "processing_result",
+              "fieldValue": "={{ JSON.stringify($input.first().json) }}"
+            }
+          ]
+        }
+      },
+      "id": "log-stripe-event",
+      "name": "📊 Log Stripe Event",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1340, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-phoenix",
+          "name": "Supabase Phoenix"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"received\": true,\n  \"event_id\": \"{{ $('🚦 Stripe Webhook Router').item.json.event_id }}\",\n  \"event_type\": \"{{ $('🚦 Stripe Webhook Router').item.json.event_type }}\",\n  \"processed_at\": \"{{ new Date().toISOString() }}\",\n  \"phoenix_ecosystem\": {\n    \"version\": \"2.0.0\",\n    \"webhook_handler\": \"complete\",\n    \"credentials_version\": true\n  }\n}",
+        "options": {
+          "responseHeaders": {
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "stripe-webhook-response",
+      "name": "✅ Stripe Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 400]
+    }
+  ],
+  "connections": {
+    "📥 Stripe Webhook Entry": {
+      "main": [
+        [
+          {
+            "node": "🚦 Stripe Webhook Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🚦 Stripe Webhook Router": {
+      "main": [
+        [
+          {
+            "node": "✅ Route Payment Success?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "❌ Route Payment Failed?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "🔄 Route Subscription Change?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✅ Route Payment Success?": {
+      "main": [
+        [
+          {
+            "node": "✅ Payment Success Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✅ Payment Success Handler": {
+      "main": [
+        [
+          {
+            "node": "👤 Update User Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❌ Route Payment Failed?": {
+      "main": [
+        [
+          {
+            "node": "❌ Payment Failed Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❌ Payment Failed Handler": {
+      "main": [
+        [
+          {
+            "node": "👤 Update User Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔄 Route Subscription Change?": {
+      "main": [
+        [
+          {
+            "node": "🔄 Subscription Change Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔄 Subscription Change Handler": {
+      "main": [
+        [
+          {
+            "node": "👤 Update User Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "👤 Update User Profile": {
+      "main": [
+        [
+          {
+            "node": "📊 Log Stripe Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Log Stripe Event": {
+      "main": [
+        [
+          {
+            "node": "✅ Stripe Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "Europe/Paris",
+    "executionOrder": "v1"
+  },
+  "versionId": "phoenix-stripe-webhooks-v2",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "phoenix-stripe-webhooks",
+  "tags": [
+    {
+      "createdAt": "2025-01-14T00:00:00.000Z",
+      "updatedAt": "2025-01-14T00:00:00.000Z",
+      "id": "phoenix-stripe-webhooks",
+      "name": "Phoenix Stripe"
+    }
+  ]
+}

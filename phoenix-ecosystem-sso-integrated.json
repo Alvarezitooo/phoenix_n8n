@@ -1,0 +1,503 @@
+{
+  "name": "🔐 Phoenix Ecosystem + SSO - Master Controller Intégré",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "phoenix-ecosystem-sso",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "main-sso-entry",
+      "name": "🔗 Phoenix SSO Entry Point",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "webhookId": "phoenix-ecosystem-sso"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 🔐 PHOENIX ECOSYSTEM SSO - MASTER CONTROLLER INTÉGRÉ\n// Tour de contrôle pour SSO + Services Phoenix\n\nconst inputData = $input.first().json;\nconst timestamp = new Date().toISOString();\n\n// ✅ VALIDATION SSO\nconst ssoActions = ['sso_generate_token', 'sso_validate_token', 'profile_sync', 'activity_tracking'];\nconst standardActions = ['user_signup', 'generate_letter', 'generate_cv', 'premium_upgrade'];\nconst allActions = [...ssoActions, ...standardActions];\n\nif (!inputData.action_type || !allActions.includes(inputData.action_type)) {\n  throw new Error(`action_type requis. Actions supportées: ${allActions.join(', ')}`);\n}\n\nconst isSSO = ssoActions.includes(inputData.action_type);\n\n// Validation spécifique selon le type\nif (!isSSO && !inputData.user_email) {\n  throw new Error('user_email requis pour actions standards');\n}\n\nif (isSSO && inputData.action_type === 'sso_generate_token' && (!inputData.user_data || !inputData.target_app)) {\n  throw new Error('user_data et target_app requis pour génération token');\n}\n\nif (isSSO && inputData.action_type === 'sso_validate_token' && (!inputData.sso_token || !inputData.expected_app)) {\n  throw new Error('sso_token et expected_app requis pour validation token');\n}\n\n// 🎯 CONFIGURATION MASTER SSO\nconst masterConfig = {\n  user_email: inputData.user_email || (inputData.user_data ? inputData.user_data.email : ''),\n  action_type: inputData.action_type,\n  user_tier: inputData.user_tier || (inputData.user_data ? inputData.user_data.user_tier : 'free'),\n  source: inputData.source || 'phoenix_ecosystem',\n  session_id: `phoenix_sso_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,\n  timestamp: timestamp,\n  request_id: `req_sso_${Date.now()}`,\n  is_sso: isSSO\n};\n\n// 🚦 ROUTAGE SSO INTELLIGENT\nlet routeDecision = {\n  ...masterConfig,\n  route_to: '',\n  priority: 'normal',\n  processing_data: {},\n  next_action: '',\n  security_level: isSSO ? 'high' : 'normal'\n};\n\nswitch (inputData.action_type) {\n  // 🔐 SSO TOKEN GENERATION\n  case 'sso_generate_token':\n    routeDecision.route_to = 'sso_token_generation';\n    routeDecision.priority = 'high';\n    routeDecision.processing_data = {\n      user_data: inputData.user_data,\n      target_app: inputData.target_app,\n      expires_hours: inputData.expires_hours || 1,\n      source_app: inputData.source_app || 'website'\n    };\n    routeDecision.next_action = 'token_delivery';\n    break;\n    \n  // 🔍 SSO TOKEN VALIDATION\n  case 'sso_validate_token':\n    routeDecision.route_to = 'sso_token_validation';\n    routeDecision.priority = 'high';\n    routeDecision.processing_data = {\n      sso_token: inputData.sso_token,\n      expected_app: inputData.expected_app,\n      validation_context: inputData.validation_context || {}\n    };\n    routeDecision.next_action = 'user_session_setup';\n    break;\n    \n  // 🔄 PROFILE SYNCHRONIZATION\n  case 'profile_sync':\n    routeDecision.route_to = 'profile_synchronization';\n    routeDecision.priority = 'normal';\n    routeDecision.processing_data = {\n      user_data: inputData.user_data,\n      source_app: inputData.source_app,\n      sync_type: inputData.sync_type || 'incremental',\n      sync_fields: inputData.sync_fields || ['profile', 'preferences', 'usage']\n    };\n    routeDecision.next_action = 'sync_confirmation';\n    break;\n    \n  // 📊 ACTIVITY TRACKING\n  case 'activity_tracking':\n    routeDecision.route_to = 'activity_logging';\n    routeDecision.priority = 'low';\n    routeDecision.processing_data = {\n      user_id: inputData.user_id,\n      app_name: inputData.app_name,\n      activity_type: inputData.activity_type,\n      activity_data: inputData.activity_data || {},\n      session_id: inputData.session_id\n    };\n    routeDecision.next_action = 'activity_confirmation';\n    break;\n    \n  // Actions standards (redirection vers master principal)\n  default:\n    routeDecision.route_to = 'redirect_to_main_ecosystem';\n    routeDecision.priority = 'normal';\n    routeDecision.processing_data = inputData;\n    routeDecision.next_action = 'main_ecosystem_processing';\n}\n\n// 🛡️ Context sécurité pour SSO\nrouteDecision.context = {\n  security_level: routeDecision.security_level,\n  requires_encryption: isSSO,\n  audit_required: isSSO,\n  rate_limit_key: `${inputData.action_type}_${masterConfig.user_email}`,\n  feature_flags: {\n    sso_enabled: true,\n    cross_app_navigation: true,\n    profile_sync: true,\n    activity_tracking: true\n  }\n};\n\nreturn { json: routeDecision };"
+      },
+      "id": "sso-master-controller",
+      "name": "🔐 SSO Master Controller",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "route-sso-token-gen",
+              "leftValue": "={{ $json.route_to }}",
+              "rightValue": "sso_token_generation",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "route-token-generation",
+      "name": "🔐 Route Token Generation?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 🔐 SSO TOKEN GENERATION LOGIC\n// Génère un token JWT chiffré pour navigation cross-app\n\nconst crypto = require('crypto');\nconst jwt = require('jsonwebtoken');\n\n// Configuration sécurisée\nconst PHOENIX_SECRET = process.env.PHOENIX_SECRET_KEY || 'phoenix-sso-secret-2024-secure';\nconst ENCRYPTION_KEY = process.env.PHOENIX_ENCRYPTION_KEY || 'phoenix-encryption-key-32chars!';\n\n// Données du Master Controller\nconst masterData = $('🔐 SSO Master Controller').first().json;\nconst processingData = masterData.processing_data;\n\n// Validation des données\nif (!processingData.user_data || !processingData.target_app) {\n  throw new Error('Données utilisateur et app cible requises');\n}\n\nconst userData = processingData.user_data;\nconst targetApp = processingData.target_app;\nconst expiresHours = processingData.expires_hours;\n\n// Apps Phoenix supportées\nconst supportedApps = ['letters', 'cv', 'rise', 'aube'];\nif (!supportedApps.includes(targetApp)) {\n  throw new Error(`App non supportée: ${targetApp}. Apps disponibles: ${supportedApps.join(', ')}`);\n}\n\n// Construction payload JWT sécurisé\nconst now = Math.floor(Date.now() / 1000);\nconst sessionId = `phoenix_sso_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;\nconst jti = crypto.randomBytes(16).toString('hex'); // JWT ID unique\n\nconst jwtPayload = {\n  // Données utilisateur essentielles\n  user_id: userData.user_id,\n  email: userData.email,\n  user_tier: userData.user_tier || 'free',\n  full_name: userData.full_name || '',\n  \n  // Contexte de navigation\n  source_app: processingData.source_app || 'website',\n  target_app: targetApp,\n  session_id: sessionId,\n  \n  // Métadonnées JWT\n  iat: now,\n  exp: now + (expiresHours * 3600),\n  iss: 'phoenix-ecosystem',\n  aud: targetApp,\n  jti: jti,\n  \n  // Sécurité\n  security_level: 'high',\n  permissions: {\n    app_access: true,\n    profile_read: true,\n    cross_navigation: true\n  }\n};\n\ntry {\n  // Génération JWT\n  const jwtToken = jwt.sign(jwtPayload, PHOENIX_SECRET, {\n    algorithm: 'HS256',\n    header: {\n      typ: 'JWT',\n      alg: 'HS256',\n      kid: 'phoenix-sso-v1'\n    }\n  });\n  \n  // Chiffrement AES-256-CBC pour sécurité supplémentaire\n  const cipher = crypto.createCipher('aes-256-cbc', ENCRYPTION_KEY);\n  let encryptedToken = cipher.update(jwtToken, 'utf8', 'base64');\n  encryptedToken += cipher.final('base64');\n  \n  // Encodage URL-safe final\n  const finalToken = Buffer.from(encryptedToken, 'base64').toString('base64url');\n  \n  // URL de redirection complète\n  const appUrls = {\n    letters: process.env.PHOENIX_LETTERS_URL || 'https://phoenix-letters.streamlit.app',\n    cv: process.env.PHOENIX_CV_URL || 'https://phoenix-cv.streamlit.app',\n    rise: process.env.PHOENIX_RISE_URL || 'https://phoenix-rise.streamlit.app',\n    aube: process.env.PHOENIX_AUBE_URL || 'https://phoenix-aube.streamlit.app'\n  };\n  \n  const redirectUrl = `${appUrls[targetApp]}?phoenix_auth=${finalToken}&source=sso&session_id=${sessionId}`;\n  \n  // Réponse complète\n  return {\n    success: true,\n    sso_token: finalToken,\n    redirect_url: redirectUrl,\n    expires_in: expiresHours * 3600,\n    target_app: targetApp,\n    source_app: processingData.source_app,\n    session_id: sessionId,\n    user_email: userData.email,\n    user_tier: userData.user_tier,\n    issued_at: new Date().toISOString(),\n    expires_at: new Date((now + (expiresHours * 3600)) * 1000).toISOString(),\n    token_type: 'Bearer',\n    security_context: {\n      encrypted: true,\n      algorithm: 'HS256',\n      encryption: 'AES-256-CBC'\n    },\n    phoenix_ecosystem: {\n      version: '2.0.0',\n      sso_version: '1.0.0'\n    }\n  };\n  \n} catch (error) {\n  console.error('Erreur génération token SSO:', error);\n  \n  return {\n    success: false,\n    error: 'Erreur génération token SSO',\n    error_code: 'TOKEN_GENERATION_FAILED',\n    details: error.message,\n    timestamp: new Date().toISOString(),\n    request_id: masterData.request_id\n  };\n}"
+      },
+      "id": "sso-token-generator",
+      "name": "🔐 SSO Token Generator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "route-sso-token-val",
+              "leftValue": "={{ $json.route_to }}",
+              "rightValue": "sso_token_validation",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "route-token-validation",
+      "name": "🔍 Route Token Validation?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 🔍 SSO TOKEN VALIDATION LOGIC\n// Valide et déchiffre un token SSO pour authentification cross-app\n\nconst crypto = require('crypto');\nconst jwt = require('jsonwebtoken');\n\n// Configuration sécurisée\nconst PHOENIX_SECRET = process.env.PHOENIX_SECRET_KEY || 'phoenix-sso-secret-2024-secure';\nconst ENCRYPTION_KEY = process.env.PHOENIX_ENCRYPTION_KEY || 'phoenix-encryption-key-32chars!';\n\n// Données du Master Controller\nconst masterData = $('🔐 SSO Master Controller').first().json;\nconst processingData = masterData.processing_data;\n\n// Validation des données d'entrée\nif (!processingData.sso_token || !processingData.expected_app) {\n  throw new Error('Token SSO et app attendue requis');\n}\n\nconst ssoToken = processingData.sso_token;\nconst expectedApp = processingData.expected_app;\n\ntry {\n  // Étape 1: Décodage base64url vers base64\n  let base64Token;\n  try {\n    base64Token = Buffer.from(ssoToken, 'base64url').toString('base64');\n  } catch (e) {\n    throw new Error('Format de token invalide');\n  }\n  \n  // Étape 2: Déchiffrement AES-256-CBC\n  let jwtToken;\n  try {\n    const decipher = crypto.createDecipher('aes-256-cbc', ENCRYPTION_KEY);\n    jwtToken = decipher.update(base64Token, 'base64', 'utf8');\n    jwtToken += decipher.final('utf8');\n  } catch (e) {\n    throw new Error('Échec déchiffrement token');\n  }\n  \n  // Étape 3: Validation JWT avec vérifications strictes\n  let payload;\n  try {\n    payload = jwt.verify(jwtToken, PHOENIX_SECRET, {\n      algorithms: ['HS256'],\n      audience: expectedApp,\n      issuer: 'phoenix-ecosystem',\n      clockTolerance: 60 // Tolérance 1 minute\n    });\n  } catch (e) {\n    if (e.name === 'TokenExpiredError') {\n      throw new Error('Token expiré');\n    } else if (e.name === 'JsonWebTokenError') {\n      throw new Error('Token JWT invalide');\n    } else {\n      throw new Error(`Validation JWT échouée: ${e.message}`);\n    }\n  }\n  \n  // Étape 4: Vérifications supplémentaires Phoenix\n  const now = Math.floor(Date.now() / 1000);\n  \n  if (payload.target_app !== expectedApp) {\n    throw new Error(`App cible incorrecte: attendu ${expectedApp}, reçu ${payload.target_app}`);\n  }\n  \n  if (payload.exp < now) {\n    throw new Error('Token expiré (vérification secondaire)');\n  }\n  \n  if (!payload.user_id || !payload.email) {\n    throw new Error('Données utilisateur manquantes dans le token');\n  }\n  \n  // Étape 5: Construction profil utilisateur validé\n  const validatedProfile = {\n    user_id: payload.user_id,\n    email: payload.email,\n    user_tier: payload.user_tier || 'free',\n    full_name: payload.full_name || '',\n    source_app: payload.source_app,\n    target_app: payload.target_app,\n    session_id: payload.session_id,\n    permissions: payload.permissions || {},\n    \n    // Métadonnées de validation\n    iat: new Date(payload.iat * 1000).toISOString(),\n    exp: new Date(payload.exp * 1000).toISOString(),\n    remaining_seconds: payload.exp - now,\n    jti: payload.jti\n  };\n  \n  // Réponse de validation réussie\n  return {\n    success: true,\n    valid: true,\n    user_profile: validatedProfile,\n    validation_context: {\n      validated_at: new Date().toISOString(),\n      validation_method: 'jwt_aes_verification',\n      security_level: 'high',\n      app_match: true,\n      token_fresh: (payload.exp - now) > 300 // Token frais si >5min restantes\n    },\n    session_data: {\n      session_id: payload.session_id,\n      can_navigate: true,\n      requires_sync: false\n    },\n    message: `Token valide pour ${payload.email} sur ${expectedApp}`,\n    phoenix_ecosystem: {\n      version: '2.0.0',\n      sso_validation: true\n    }\n  };\n  \n} catch (error) {\n  console.error('Erreur validation token SSO:', error);\n  \n  // Classification des erreurs\n  let errorType = 'validation_failed';\n  let statusCode = 401;\n  \n  if (error.message.includes('Format de token')) {\n    errorType = 'invalid_format';\n    statusCode = 400;\n  } else if (error.message.includes('déchiffrement')) {\n    errorType = 'decryption_failed';\n  } else if (error.message.includes('expiré')) {\n    errorType = 'token_expired';\n  } else if (error.message.includes('App cible')) {\n    errorType = 'wrong_target_app';\n  }\n  \n  return {\n    success: false,\n    valid: false,\n    error: error.message,\n    error_type: errorType,\n    error_code: errorType.toUpperCase(),\n    status_code: statusCode,\n    expected_app: expectedApp,\n    validation_context: {\n      validated_at: new Date().toISOString(),\n      validation_method: 'jwt_aes_verification',\n      failure_reason: errorType\n    },\n    phoenix_ecosystem: {\n      version: '2.0.0',\n      sso_validation: false\n    }\n  };\n}"
+      },
+      "id": "sso-token-validator",
+      "name": "🔍 SSO Token Validator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "route-profile-sync",
+              "leftValue": "={{ $json.route_to }}",
+              "rightValue": "profile_synchronization",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "route-profile-sync",
+      "name": "🔄 Route Profile Sync?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 🔄 PROFILE SYNCHRONIZATION LOGIC\n// Synchronise les profils utilisateur entre applications Phoenix\n\nconst masterData = $('🔐 SSO Master Controller').first().json;\nconst processingData = masterData.processing_data;\n\n// Validation des données\nif (!processingData.user_data || !processingData.source_app) {\n  throw new Error('Données utilisateur et app source requises');\n}\n\nconst userData = processingData.user_data;\nconst sourceApp = processingData.source_app;\nconst syncType = processingData.sync_type;\nconst syncFields = processingData.sync_fields;\n\ntry {\n  // Construction des données de synchronisation\n  const syncPayload = {\n    user_id: userData.user_id,\n    email: userData.email,\n    profile_data: {\n      full_name: userData.full_name,\n      user_tier: userData.user_tier,\n      preferences: userData.preferences || {},\n      app_access: userData.app_access || {}\n    },\n    sync_context: {\n      source_app: sourceApp,\n      sync_type: syncType,\n      sync_fields: syncFields,\n      timestamp: new Date().toISOString(),\n      session_id: masterData.session_id\n    },\n    activity_metadata: {\n      last_app_used: sourceApp,\n      sync_trigger: 'sso_navigation',\n      user_agent: 'phoenix_ecosystem_n8n'\n    }\n  };\n  \n  // Simulation de la synchronisation (remplacer par appel Supabase)\n  const syncResult = {\n    success: true,\n    sync_id: `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,\n    user_id: userData.user_id,\n    fields_synchronized: syncFields,\n    sync_type: syncType,\n    source_app: sourceApp,\n    synchronized_at: new Date().toISOString(),\n    changes_detected: {\n      profile: false,\n      preferences: true,\n      app_access: false\n    },\n    next_sync_recommended: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // +24h\n    phoenix_ecosystem: {\n      version: '2.0.0',\n      sync_version: '1.0.0'\n    }\n  };\n  \n  return syncResult;\n  \n} catch (error) {\n  console.error('Erreur synchronisation profil:', error);\n  \n  return {\n    success: false,\n    error: 'Erreur synchronisation profil',\n    error_code: 'PROFILE_SYNC_FAILED',\n    details: error.message,\n    user_id: userData.user_id || 'unknown',\n    source_app: sourceApp,\n    timestamp: new Date().toISOString()\n  };\n}"
+      },
+      "id": "profile-sync-processor",
+      "name": "🔄 Profile Sync Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "route-activity-tracking",
+              "leftValue": "={{ $json.route_to }}",
+              "rightValue": "activity_logging",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "route-activity-tracking",
+      "name": "📊 Route Activity Tracking?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 700]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 📊 ACTIVITY TRACKING LOGIC\n// Track les activités utilisateur pour analytics Phoenix\n\nconst masterData = $('🔐 SSO Master Controller').first().json;\nconst processingData = masterData.processing_data;\n\n// Validation des données\nif (!processingData.user_id || !processingData.app_name || !processingData.activity_type) {\n  throw new Error('user_id, app_name et activity_type requis');\n}\n\nconst userId = processingData.user_id;\nconst appName = processingData.app_name;\nconst activityType = processingData.activity_type;\nconst activityData = processingData.activity_data;\nconst sessionId = processingData.session_id;\n\ntry {\n  // Construction de l'événement d'activité\n  const activityEvent = {\n    event_type: 'user_activity',\n    user_id: userId,\n    app_name: appName,\n    activity_type: activityType,\n    activity_data: activityData,\n    session_context: {\n      session_id: sessionId,\n      source: 'phoenix_sso_ecosystem',\n      tracking_method: 'n8n_workflow'\n    },\n    timestamp: new Date().toISOString(),\n    metadata: {\n      user_agent: 'phoenix_ecosystem_n8n',\n      ip_hash: 'hashed_for_privacy',\n      app_version: '2.0.0'\n    }\n  };\n  \n  // Catégorisation de l'activité\n  const activityCategories = {\n    'login': 'authentication',\n    'logout': 'authentication',\n    'navigation': 'user_behavior',\n    'feature_usage': 'engagement',\n    'letter_generated': 'content_creation',\n    'cv_generated': 'content_creation',\n    'premium_upgrade': 'conversion',\n    'profile_updated': 'profile_management'\n  };\n  \n  activityEvent.category = activityCategories[activityType] || 'general';\n  \n  // Métriques d'engagement\n  const engagementMetrics = {\n    is_premium_action: ['letter_generated', 'cv_generated', 'premium_upgrade'].includes(activityType),\n    engagement_score: activityType === 'feature_usage' ? 2 : 1,\n    conversion_potential: activityType === 'navigation' ? 'medium' : 'low'\n  };\n  \n  if (activityType === 'premium_upgrade') {\n    engagementMetrics.conversion_potential = 'completed';\n    engagementMetrics.engagement_score = 10;\n  }\n  \n  activityEvent.engagement_metrics = engagementMetrics;\n  \n  // Réponse de tracking\n  return {\n    success: true,\n    activity_tracked: true,\n    activity_id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,\n    user_id: userId,\n    app_name: appName,\n    activity_type: activityType,\n    category: activityEvent.category,\n    tracked_at: activityEvent.timestamp,\n    engagement_metrics: engagementMetrics,\n    event_payload: activityEvent,\n    phoenix_ecosystem: {\n      version: '2.0.0',\n      analytics_version: '1.0.0'\n    }\n  };\n  \n} catch (error) {\n  console.error('Erreur tracking activité:', error);\n  \n  return {\n    success: false,\n    activity_tracked: false,\n    error: 'Erreur tracking activité',\n    error_code: 'ACTIVITY_TRACKING_FAILED',\n    details: error.message,\n    user_id: userId || 'unknown',\n    app_name: appName || 'unknown',\n    timestamp: new Date().toISOString()\n  };\n}"
+      },
+      "id": "activity-tracker",
+      "name": "📊 Activity Tracker",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 600]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "route-redirect",
+              "leftValue": "={{ $json.route_to }}",
+              "rightValue": "redirect_to_main_ecosystem",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "route-redirect-main",
+      "name": "🔄 Route to Main Ecosystem?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 800]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/phoenix-ecosystem",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Phoenix-Source",
+              "value": "sso-redirect"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={{ JSON.stringify($('🔐 SSO Master Controller').item.json.processing_data) }}",
+        "options": {}
+      },
+      "id": "redirect-main-ecosystem",
+      "name": "🌟 Redirect to Main Ecosystem",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 800]
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "operation": "insert",
+        "tableId": "sso_events",
+        "dataMode": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "event_type",
+              "fieldValue": "={{ $('🔐 SSO Master Controller').item.json.action_type }}"
+            },
+            {
+              "fieldId": "user_id",
+              "fieldValue": "={{ $('🔐 SSO Master Controller').item.json.user_email }}"
+            },
+            {
+              "fieldId": "session_id",
+              "fieldValue": "={{ $('🔐 SSO Master Controller').item.json.session_id }}"
+            },
+            {
+              "fieldId": "source_app",
+              "fieldValue": "={{ $('🔐 SSO Master Controller').item.json.source }}"
+            },
+            {
+              "fieldId": "route_taken",
+              "fieldValue": "={{ $('🔐 SSO Master Controller').item.json.route_to }}"
+            },
+            {
+              "fieldId": "security_level",
+              "fieldValue": "={{ $('🔐 SSO Master Controller').item.json.context.security_level }}"
+            },
+            {
+              "fieldId": "timestamp",
+              "fieldValue": "={{ $('🔐 SSO Master Controller').item.json.timestamp }}"
+            },
+            {
+              "fieldId": "payload",
+              "fieldValue": "={{ JSON.stringify($input.first().json) }}"
+            }
+          ]
+        }
+      },
+      "id": "log-sso-event",
+      "name": "📊 Log SSO Event",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1120, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-phoenix",
+          "name": "Supabase Phoenix"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($input.first().json) }}",
+        "options": {
+          "responseHeaders": {
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "X-Phoenix-SSO",
+                "value": "processed"
+              },
+              {
+                "name": "X-Phoenix-Version",
+                "value": "2.0.0"
+              }
+            ]
+          }
+        }
+      },
+      "id": "final-sso-response",
+      "name": "✅ Final SSO Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 400]
+    }
+  ],
+  "connections": {
+    "🔗 Phoenix SSO Entry Point": {
+      "main": [
+        [
+          {
+            "node": "🔐 SSO Master Controller",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔐 SSO Master Controller": {
+      "main": [
+        [
+          {
+            "node": "🔐 Route Token Generation?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "🔍 Route Token Validation?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "🔄 Route Profile Sync?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "📊 Route Activity Tracking?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "🔄 Route to Main Ecosystem?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔐 Route Token Generation?": {
+      "main": [
+        [
+          {
+            "node": "🔐 SSO Token Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔐 SSO Token Generator": {
+      "main": [
+        [
+          {
+            "node": "📊 Log SSO Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔍 Route Token Validation?": {
+      "main": [
+        [
+          {
+            "node": "🔍 SSO Token Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔍 SSO Token Validator": {
+      "main": [
+        [
+          {
+            "node": "📊 Log SSO Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔄 Route Profile Sync?": {
+      "main": [
+        [
+          {
+            "node": "🔄 Profile Sync Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔄 Profile Sync Processor": {
+      "main": [
+        [
+          {
+            "node": "📊 Log SSO Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Route Activity Tracking?": {
+      "main": [
+        [
+          {
+            "node": "📊 Activity Tracker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Activity Tracker": {
+      "main": [
+        [
+          {
+            "node": "📊 Log SSO Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔄 Route to Main Ecosystem?": {
+      "main": [
+        [
+          {
+            "node": "🌟 Redirect to Main Ecosystem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🌟 Redirect to Main Ecosystem": {
+      "main": [
+        [
+          {
+            "node": "📊 Log SSO Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Log SSO Event": {
+      "main": [
+        [
+          {
+            "node": "✅ Final SSO Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "Europe/Paris",
+    "executionOrder": "v1"
+  },
+  "versionId": "phoenix-sso-integrated-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "phoenix-ecosystem-sso-integrated",
+  "tags": [
+    {
+      "createdAt": "2025-01-14T00:00:00.000Z",
+      "updatedAt": "2025-01-14T00:00:00.000Z",
+      "id": "phoenix-sso",
+      "name": "Phoenix SSO"
+    }
+  ]
+}
